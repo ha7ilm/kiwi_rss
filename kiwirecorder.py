@@ -10,12 +10,16 @@ from optparse import OptionParser
 
 import kiwiclient
 
-def _write_wav_header(fp, filesize, samplerate):
+def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     fp.write(struct.pack('<4sI4s', 'RIFF', filesize - 8, 'WAVE'))
-    fp.write(struct.pack('<4sIHHIIHH', 'fmt ', 16, 1, 1, samplerate, samplerate * 16 / 8, 16 / 8, 16))
-    fp.write(struct.pack('<4sI', 'data', filesize - 12 - 8 - 16 - 8))
+    bits_per_sample = 16
+    byte_rate       = samplerate * num_channels * bits_per_sample / 8
+    block_align     = num_channels * bits_per_sample / 8
+    fp.write(struct.pack('<4sIHHIIHH', 'fmt ', 16, 1, num_channels, samplerate, byte_rate, block_align, bits_per_sample))
+    if not is_kiwi_wav:
+        fp.write(struct.pack('<4sI', 'data', filesize - 12 - 8 - 16 - 8))
 
-class KiwiRecorder(kiwiclient.KiwiSDRClientBase):
+class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
     def __init__(self, options):
         super(KiwiRecorder, self).__init__()
         self._options = options
@@ -26,20 +30,27 @@ class KiwiRecorder(kiwiclient.KiwiSDRClientBase):
             self._nf_array.insert(x, 0)
         self._nf_samples = 0
         self._nf_index = 0
+        self._num_channels = 2 if options.modulation == 'iq' else 1
+        self._last_gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], [0,0,0,0]));
 
     def _setup_rx_params(self):
-        self._logger.info('Setting up reception')
-        mod = self._options.modulation
+        mod    = self._options.modulation
         lp_cut = self._options.lp_cut
         hp_cut = self._options.hp_cut
-        freq = self._options.frequency
+        freq   = self._options.frequency
         if (mod == 'am'):
             # For AM, ignore the low pass filter cutoff
             lp_cut = -hp_cut
         self.set_mod(mod, lp_cut, hp_cut, freq)
-        self.set_agc(True)
+        if self._options.agc_off:
+            self.set_agc(on=False, gain=self._options.agc_gain)
+        else:
+            self.set_agc(on=True)
+        self.set_inactivity_timeout(0)
+        self.set_name('')
+        self.set_geo('Antarctica')
 
-    def _process_samples(self, seq, samples, rssi, thresh=12):
+    def _process_audio_samples(self, seq, samples, rssi):
         sys.stdout.write('\rBlock: %08x, RSSI: %-04d' % (seq, rssi))
         if self._nf_samples < len(self._nf_array) or self._squelch_on_seq is None:
             self._nf_array[self._nf_index] = rssi
@@ -49,9 +60,9 @@ class KiwiRecorder(kiwiclient.KiwiSDRClientBase):
         if self._nf_samples < len(self._nf_array):
             self._nf_samples += 1
             return
-            
+
         median_nf = sorted(self._nf_array)[len(self._nf_array) // 3]
-        rssi_thresh = median_nf + thresh
+        rssi_thresh = median_nf + self._options.thresh
         is_open = self._squelch_on_seq is not None
         if is_open:
             rssi_thresh -= 6
@@ -67,7 +78,17 @@ class KiwiRecorder(kiwiclient.KiwiSDRClientBase):
             self._squelch_on_seq = None
             self._start_ts = None
             return
-        self._write_samples(samples)
+        self._write_samples(samples, {})
+
+    def _process_iq_samples(self, seq, samples, rssi, gps):
+        sys.stdout.write('\rBlock: %08x, RSSI: %-04d\n' % (seq, rssi))
+        ## convert list of complex numbers to an array
+        ##print gps['gpsnsec']-self._last_gps['gpsnsec']
+        self._last_gps = gps
+        s = array.array('h')
+        for x in [[y.real, y.imag] for y in samples]:
+            s.extend(map(int, x))
+        self._write_samples(s, gps)
 
     def _get_output_filename(self):
         ts = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
@@ -79,18 +100,25 @@ class KiwiRecorder(kiwiclient.KiwiSDRClientBase):
             fp.seek(0, os.SEEK_END)
             filesize = fp.tell()
             fp.seek(0, os.SEEK_SET)
-            _write_wav_header(fp, filesize, int(self._sample_rate))
+            _write_wav_header(fp, filesize, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
 
-    def _write_samples(self, samples):
+    def _write_samples(self, samples, *args):
         """Output to a file on the disk."""
+        print '_write_samples', args
         now = time.gmtime()
         if self._start_ts is None or self._start_ts.tm_hour != now.tm_hour:
             self._start_ts = now
             # Write a static WAV header
             with open(self._get_output_filename(), 'wb') as fp:
-                _write_wav_header(fp, 666, int(self._sample_rate))
+                _write_wav_header(fp, 100, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
             print "\nStarted a new file: %s" % (self._get_output_filename())
         with open(self._get_output_filename(), 'ab') as fp:
+            if (self._options.is_kiwi_wav):
+                gps = args[0]
+                sys.stdout.write('gpssec: %d' % (gps['gpssec']))
+                fp.write(struct.pack('<4sIBBII', 'kiwi', 10, gps['last_gps_solution'], 0, gps['gpssec'], gps['gpsnsec']))
+                sample_size = samples.itemsize * len(samples)
+                fp.write(struct.pack('<4sI', 'data', sample_size))
             # TODO: something better than that
             samples.tofile(fp)
         self._update_wav_header()
@@ -116,7 +144,7 @@ def main():
 
     parser.add_option('-f', '--freq',
                       dest='frequency',
-                      type='float',
+                      type='float', default=1000,
                       help='Frequency to tune to, in kHz.')
     parser.add_option('-m', '--modulation',
                       dest='modulation',
@@ -134,6 +162,25 @@ def main():
                       dest='station',
                       type='string', default=None,
                       help='Station ID to be appended')
+    parser.add_option('-T', '--threshold',
+                      dest='thresh',
+                      type='float', default=0,
+                      help='Squelch threshold, in dB.')
+    parser.add_option('-w', '--kiwi-wav',
+                      dest='is_kiwi_wav',
+                      default=False,
+                      action='store_true',
+                      help='wav file format including KIWI header (only for IQ mode)')
+    parser.add_option('-a', '--agc-off',
+                      dest='agc_off',
+                      default=False,
+                      action='store_true',
+                      help='AGC OFF (default gain=40)')
+    parser.add_option('-g', '--agc-gain',
+                      dest='agc_gain',
+                      type='float',
+                      default=40,
+                      help='AGC gain')
 
     (options, unused_args) = parser.parse_args()
 
@@ -141,7 +188,7 @@ def main():
 
     while True:
         recorder = KiwiRecorder(options)
-        
+
         # Connect
         try:
             recorder.connect(options.server_host, options.server_port)
