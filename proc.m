@@ -16,6 +16,9 @@ function [x,xx,fs,last_gpsfix]=proc(varargin)
   last_gpsfix =  max(cat(1,x.gpslast));
   idx         = find(cat(1,x.gpslast) < max_last_gpsfix);
   xx          = {};
+  if isempty(idx)
+    return
+  endif
   n = length(idx);
   xx(n).t = [];
   xx(n).z = [];
