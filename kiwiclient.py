@@ -92,7 +92,6 @@ class KiwiSDRStreamBase(object):
         self._version_major = None
         self._version_minor = None
         self._modulation = None
-
     def connect(self, host, port):
         # self._prepare_stream(host, port, 'SND')
         pass
@@ -109,7 +108,6 @@ class KiwiSDRStreamBase(object):
         self._socket = socket.socket()
         self._socket.settimeout(self._options.socket_timeout)
         self._socket.connect((host, port))
-
         uri = '/%d/%s' % (int(time.time()), which)
         handshake = wsclient.ClientHandshakeProcessor(self._socket, host, port)
         handshake.handshake(uri)
@@ -239,7 +237,6 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
         rssi = (smeter & 0x0FFF) // 10 - 127
         if self._modulation == 'iq':
             gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], struct.unpack('<BBII', data[0:10])))
-            ## gps['gpsnsec'] = struct.unpack('<I', data[6:10])[0]
             data  = data[10:]
             count = len(data) // 2
             data  = struct.unpack('>%dh' % count, data)
@@ -274,7 +271,6 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
 
     def run(self):
         """Run the client."""
-
         received = self._stream.receive_message()
         self._process_ws_message(received)
 

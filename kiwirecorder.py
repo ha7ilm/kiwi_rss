@@ -1,11 +1,6 @@
-import array
-import codecs
-import logging
-import os
-import struct
-import sys
-import time
-import traceback
+## -*- python -*-
+
+import array, codecs, logging, os, struct, sys, time, traceback, copy, threading
 from optparse import OptionParser
 
 import kiwiclient
@@ -20,13 +15,10 @@ def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
         fp.write(struct.pack('<4sI', 'data', filesize - 12 - 8 - 16 - 8))
 
 class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
-    def __init__(self, options, server):
+    def __init__(self, options):
         super(KiwiRecorder, self).__init__()
         self._options = options
-        self._server = server
         freq = options.frequency
-        if server == 1 and options.frequency2:
-            freq = options.frequency2
         #print "%s:%s freq=%d" % (options.server_host, options.server_port, freq)
         self._freq = freq
         self._start_ts = None
@@ -43,11 +35,11 @@ class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
         mod    = self._options.modulation
         lp_cut = self._options.lp_cut
         hp_cut = self._options.hp_cut
-        if (mod == 'am'):
+        if mod == 'am':
             # For AM, ignore the low pass filter cutoff
             lp_cut = -hp_cut
         self.set_mod(mod, lp_cut, hp_cut, self._freq)
-        if self._options.agc_off:
+        if self._options.agc_gain != None:
             self.set_agc(on=False, gain=self._options.agc_gain)
         else:
             self.set_agc(on=True)
@@ -86,21 +78,18 @@ class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
         self._write_samples(samples, {})
 
     def _process_iq_samples(self, seq, samples, rssi, gps):
-        #sys.stdout.write('\rBlock: %08x, RSSI: %-04d' % (seq, rssi))
-        #sys.stdout.flush()
-        ## convert list of complex numbers to an array
         ##print gps['gpsnsec']-self._last_gps['gpsnsec']
         self._last_gps = gps
+        ## convert list of complex numbers into an array
         s = array.array('h')
         for x in [[y.real, y.imag] for y in samples]:
             s.extend(map(int, x))
         self._write_samples(s, gps)
 
     def _get_output_filename(self):
-        ts = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
-        sta = '' if self._options.station is None else '_' + (self._options.station2 if self._server == 1 and self._options.station2 != None else self._options.station)
-        server = '' if self._options.two_servers == False else '_server' + str(self._server)
-        return '%s_%d_%s%s%s.wav' % (ts, int(self._freq * 1000), self._options.modulation, sta, server)
+        ts  = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
+        sta = '' if self._options.station is "None" else self._options.station
+        return '%s_%d_%s%s.wav' % (ts, int(self._freq * 1000), self._options.modulation, sta)
 
     def _update_wav_header(self):
         with open(self._get_output_filename(), 'r+b') as fp:
@@ -120,9 +109,9 @@ class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
                 _write_wav_header(fp, 100, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
             print "\nStarted a new file: %s" % (self._get_output_filename())
         with open(self._get_output_filename(), 'ab') as fp:
-            if (self._options.is_kiwi_wav):
+            if self._options.is_kiwi_wav:
                 gps = args[0]
-                sys.stdout.write('gpssec: %d' % (gps['gpssec']))
+                logging.info('%s: last_gps_solution=%d gpssec=(%d,%d)' % (self._get_output_filename(), gps['last_gps_solution'], gps['gpssec'], gps['gpsnsec']));
                 fp.write(struct.pack('<4sIBBII', 'kiwi', 10, gps['last_gps_solution'], 0, gps['gpssec'], gps['gpsnsec']))
                 sample_size = samples.itemsize * len(samples)
                 fp.write(struct.pack('<4sI', 'data', sample_size))
@@ -131,6 +120,63 @@ class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
         self._update_wav_header()
 
 
+class Worker(threading.Thread):
+   def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, verbose=None):
+       super(Worker, self).__init__(group=group, target=target, name=name, verbose=verbose)
+       self._recorder, self._options, self._run_event = args
+
+   def _do_run(self):
+       return self._run_event.is_set()
+
+   def _sleep(self, seconds):
+       for i in range(seconds):
+           if not self._do_run():
+               break;
+           time.sleep(1)
+
+   def run(self):
+       while self._do_run():
+               try:
+                   self._recorder.connect(self._options.server_host, self._options.server_port)
+               except:
+                   print "Failed to connect, sleeping and reconnecting"
+                   self._sleep(15)
+                   continue
+
+               try:
+                   self._recorder.open()
+                   while self._do_run():
+                       self._recorder.run()
+               except kiwiclient.KiwiTooBusyError:
+                   print "Server %s:%d too busy now" % (self._options.server_host, self._options.server_port)
+                   self._sleep(15)
+                   continue
+               except Exception as e:
+                   traceback.print_exc()
+                   break
+
+       self._recorder.close()
+       print "exiting"
+
+
+def options_cross_product(options):
+    """build a list of options according to the number of servers specified"""
+    def _sel_entry(i, l):
+        """if l is a list, return the element with index i, else return l"""
+        return l[min(i, len(l)-1)] if type(l) == list else l
+
+    l = []
+    for i,s in enumerate(options.server_host):
+        opt_single = copy.copy(options)
+        opt_single.server_host = s;
+        for x in ['server_port', 'frequency', 'agc_gain', 'station']:
+            opt_single.__dict__[x] = _sel_entry(i, opt_single.__dict__[x])
+        l.append(opt_single)
+    return l
+
+def get_comma_separated_args(option, opt, value, parser, fn):
+    setattr(parser.values, option.dest, map(fn, value.split(',')))
+
 def main():
     sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 
@@ -138,35 +184,29 @@ def main():
     parser.add_option('--log-level', '--log_level', type='choice',
                       dest='log_level', default='warn',
                       choices=['debug', 'info', 'warn', 'error', 'critical'],
-                      help='Log level.')
+                      help='Log level: debug|info|warn|error|critical')
     parser.add_option('-k', '--socket-timeout', '--socket_timeout',
                       dest='socket_timeout', type='int', default=10,
                       help='Timeout(sec) for sockets')
-    parser.add_option('-s', '--s1', '--server-host', '--server_host',
+    parser.add_option('-s', '--server-host',
                       dest='server_host', type='string',
-                      default='localhost', help='server host')
-    parser.add_option('-p', '--p1', '--server-port', '--server_port',
-                      dest='server_port', type='int',
-                      default=8073, help='server port (default 8073)')
-
-    parser.add_option('-2', '--2servers',
-                      dest='two_servers', action='store_true',
-                      default=False, help='Connect to two servers simultaneously.')
-    parser.add_option('--s2', '--server-host2', '--server_host2',
-                      dest='server_host2', type='string',
-                      default='localhost', help='server host2')
-    parser.add_option('--p2', '--server-port2', '--server_port2',
-                      dest='server_port2', type='int',
-                      default=8073, help='server port2 (default 8073)')
-
-    parser.add_option('-f', '--freq', '--f1', '--freq1',
+                      default='localhost', help='server host (can be a comma-delimited list)',
+                      action='callback',
+                      callback_args=(str,),
+                      callback=get_comma_separated_args)
+    parser.add_option('-p', '--server-port',
+                      dest='server_port', type='string',
+                      default=8073, help='server port, default 8073 (can be a comma delimited list)',
+                      action='callback',
+                      callback_args=(int,),
+                      callback=get_comma_separated_args)
+    parser.add_option('-f', '--freq',
                       dest='frequency',
-                      type='float', default=1000,
-                      help='Frequency to tune to, in kHz.')
-    parser.add_option('--f2', '--freq2',
-                      dest='frequency2',
-                      type='float', default=0,
-                      help='Optional frequency for second server to tune to, in kHz.')
+                      type='string', default=1000,
+                      help='Frequency to tune to, in kHz (can be a comma-separated list)',
+                      action='callback',
+                      callback_args=(float,),
+                      callback=get_comma_separated_args)
     parser.add_option('-m', '--modulation',
                       dest='modulation',
                       type='string', default='am',
@@ -181,12 +221,11 @@ def main():
                       help='Low-pass cutoff frequency, in Hz.')
     parser.add_option('--station',
                       dest='station',
-                      type='string', default=None,
-                      help='Station ID to be appended.')
-    parser.add_option('--station2',
-                      dest='station2',
-                      type='string', default=None,
-                      help='Station ID to be appended for second server.')
+                      type='string', default="None",
+                      help='Station ID to be appended (can be a comma-separated list)',
+                      action='callback',
+                      callback_args=(str,),
+                      callback=get_comma_separated_args)
     parser.add_option('-T', '--threshold',
                       dest='thresh',
                       type='float', default=0,
@@ -195,77 +234,39 @@ def main():
                       dest='is_kiwi_wav',
                       default=False,
                       action='store_true',
-                      help='wav file format including KIWI header (only for IQ mode)')
-    parser.add_option('-a', '--agc-off',
-                      dest='agc_off',
-                      default=False,
-                      action='store_true',
-                      help='AGC OFF (default gain=40)')
+                      help='wav file format including KIWI header (GPS time-stamps) only for IQ mode')
     parser.add_option('-g', '--agc-gain',
                       dest='agc_gain',
-                      type='float',
-                      default=40,
-                      help='AGC gain.')
+                      type='string',
+                      default=None,
+                      help='AGC gain; if set, AGC is turned off (can be a comma-separated list)',
+                      action='callback',
+                      callback_args=(float,),
+                      callback=get_comma_separated_args)
 
     (options, unused_args) = parser.parse_args()
 
     logging.basicConfig(level=logging.getLevelName(options.log_level.upper()))
 
-    while True:
-        recorder = KiwiRecorder(options, 0)
-        if options.two_servers:
-            # print "recorder2"
-            recorder2 = KiwiRecorder(options, 1)
+    run_event = threading.Event()
+    run_event.set()
 
-        # Connect
-        try:
-            recorder.connect(options.server_host, options.server_port)
-            if options.two_servers:
-                recorder2.connect(options.server_host2, options.server_port2)
-        except KeyboardInterrupt:
-            break
-        except:
-            print "Failed to connect, sleeping and reconnecting"
-            time.sleep(15)
-            continue
+    options   = options_cross_product(options)
+    recorders = [Worker(args=(KiwiRecorder(opt),opt,run_event)) for i,opt in enumerate(options)]
 
-        # Open
-        try:
-            recorder.open()
-            if options.two_servers:
-                recorder2.open()
-        except KeyboardInterrupt:
-            break
-        except kiwiclient.KiwiTooBusyError:
-            print "Server too busy now"
-            time.sleep(15)
-            continue
-        except Exception as e:
-            traceback.print_exc()
-            break
+    try:
+        for i,r in enumerate(recorders):
+            if i!=0 and options[i-1].server_host == options[i].server_host:
+                time.sleep(2)
+            r.start()
+            print "started recorder %d" % i
 
-        # Record
-        try:
-            while True:
-                recorder.run()
-                if options.two_servers:
-                    recorder2.run()
-        except KeyboardInterrupt:
-            break
-        except kiwiclient.KiwiTooBusyError:
-            print "Server too busy now"
-            time.sleep(15)
-            break
-        except Exception as e:
-            traceback.print_exc()
-            break
-
-    # Close
-    recorder.close()
-    if options.two_servers:
-        recorder2.close()
-    print "exiting"
-
+        while True:
+            time.sleep(.1)
+    except KeyboardInterrupt:
+        run_event.clear()
+        [t.join() for t in threading.enumerate() if t is not threading.currentThread()]
+        print "threads successfully closed"
 
 if __name__ == '__main__':
     main()
