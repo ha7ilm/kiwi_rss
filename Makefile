@@ -26,15 +26,10 @@ fax:
 
 # Two IQ servers recording to two files in parallel
 HOST_IQ1 = fenu-radio.ddns.net
-HOST_IQ2 = hb9ryz.homeip.net
+HOST_IQ2 = southwest.ddns.net
 
 two:
-#	python kiwirecorder.py -2 --s1=$(HOST_IQ1) --f1=77.5 --s2 $(HOST_IQ2) --f2=60 -m iq -L -5000 -H 5000
-#   with "station ID" info in file name
-	python kiwirecorder.py -2 --s1=$(HOST_IQ1) --f1=77.5 --station=DCF77 --s2 $(HOST_IQ2) --f2=60 --station2=MSF -m iq -L -5000 -H 5000
-#   single frequency used by both servers
-#	python kiwirecorder.py -2 --s1=$(HOST_IQ1) --f1=77.5 --station=DCF77 --s2=$(HOST_IQ2) -m iq -L -5000 -H 5000
-
+	python kiwirecorder.py -s $(HOST_IQ1),$(HOST_IQ2) -f 77.5,60 --station=DCF77,MSF -m iq -L -5000 -H 5000
 
 help:
 	python kiwifax.py --help
