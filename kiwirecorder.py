@@ -88,8 +88,8 @@ class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
 
     def _get_output_filename(self):
         ts  = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
-        sta = '' if self._options.station is "None" else self._options.station
-        return '%s_%d_%s%s.wav' % (ts, int(self._freq * 1000), self._options.modulation, sta)
+        sta = '' if self._options.station is "None" else '_'+ self._options.station
+        return '%s_%d%s_%s.wav' % (ts, int(self._freq * 1000), sta, self._options.modulation)
 
     def _update_wav_header(self):
         with open(self._get_output_filename(), 'r+b') as fp:
