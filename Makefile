@@ -31,6 +31,14 @@ HOST_IQ2 = southwest.ddns.net
 two:
 	python kiwirecorder.py -s $(HOST_IQ1),$(HOST_IQ2) -f 77.5,60 --station=DCF77,MSF -m iq -L -5000 -H 5000
 
+
+# check GPS timestamps
+HOST_GPS = kiwisdr.sk3w.se
+
+gps:
+	python kiwirecorder.py -s $(HOST_GPS) -f 77.5 --station=DCF77 --kiwi-wav --log_level info -m iq -L -5000 -H 5000
+
+
 help:
 	python kiwifax.py --help
 	@echo
