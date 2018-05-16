@@ -39,6 +39,13 @@ gps:
 	python kiwirecorder.py -s $(HOST_GPS) -f 77.5 --station=DCF77 --kiwi-wav --log_level info -m iq -L -5000 -H 5000
 
 
+# process waterfall data
+HOST_WF = www
+
+wf:
+	python kiwirecorder.py --wf -s $(HOST_WF) -f 1440 --log_level info
+
+
 help:
 	python kiwifax.py --help
 	@echo

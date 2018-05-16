@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <octave/oct.h>
+#include <octave/oct-map.h>
 
 class chunk_base {
 public:

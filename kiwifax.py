@@ -302,7 +302,7 @@ RADIOFAX_IOC576_START_TONE = 300
 RADIOFAX_IOC288_START_TONE = 675
 RADIOFAX_STOP_TONE = 450
 
-class KiwiFax(kiwiclient.KiwiSDRSoundStream):
+class KiwiFax(kiwiclient.KiwiSDRStream):
     def __init__(self, options):
         super(KiwiFax, self).__init__()
         self._options = options

@@ -14,10 +14,11 @@ def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     if not is_kiwi_wav:
         fp.write(struct.pack('<4sI', 'data', filesize - 12 - 8 - 16 - 8))
 
-class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
+class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
     def __init__(self, options):
-        super(KiwiRecorder, self).__init__()
+        super(KiwiSoundRecorder, self).__init__()
         self._options = options
+        self._isWF = False
         freq = options.frequency
         #print "%s:%s freq=%d" % (options.server_host, options.server_port, freq)
         self._freq = freq
@@ -45,7 +46,6 @@ class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
             self.set_agc(on=True)
         self.set_inactivity_timeout(0)
         self.set_name('kiwirecorder.py')
-        # self.set_geo('Antarctica')
 
     def _process_audio_samples(self, seq, samples, rssi):
         sys.stdout.write('\rBlock: %08x, RSSI: %-04d' % (seq, rssi))
@@ -85,6 +85,87 @@ class KiwiRecorder(kiwiclient.KiwiSDRSoundStream):
         for x in [[y.real, y.imag] for y in samples]:
             s.extend(map(int, x))
         self._write_samples(s, gps)
+
+    def _get_output_filename(self):
+        ts  = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
+        sta = '' if self._options.station is "None" else '_'+ self._options.station
+        return '%s_%d%s_%s.wav' % (ts, int(self._freq * 1000), sta, self._options.modulation)
+
+    def _update_wav_header(self):
+        with open(self._get_output_filename(), 'r+b') as fp:
+            fp.seek(0, os.SEEK_END)
+            filesize = fp.tell()
+            fp.seek(0, os.SEEK_SET)
+            _write_wav_header(fp, filesize, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
+
+    def _write_samples(self, samples, *args):
+        """Output to a file on the disk."""
+        # print '_write_samples', args
+        now = time.gmtime()
+        if self._start_ts is None or self._start_ts.tm_hour != now.tm_hour:
+            self._start_ts = now
+            # Write a static WAV header
+            with open(self._get_output_filename(), 'wb') as fp:
+                _write_wav_header(fp, 100, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
+            print "\nStarted a new file: %s" % (self._get_output_filename())
+        with open(self._get_output_filename(), 'ab') as fp:
+            if self._options.is_kiwi_wav:
+                gps = args[0]
+                logging.info('%s: last_gps_solution=%d gpssec=(%d,%d)' % (self._get_output_filename(), gps['last_gps_solution'], gps['gpssec'], gps['gpsnsec']));
+                fp.write(struct.pack('<4sIBBII', 'kiwi', 10, gps['last_gps_solution'], 0, gps['gpssec'], gps['gpsnsec']))
+                sample_size = samples.itemsize * len(samples)
+                fp.write(struct.pack('<4sI', 'data', sample_size))
+            # TODO: something better than that
+            samples.tofile(fp)
+        self._update_wav_header()
+
+
+class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
+    def __init__(self, options):
+        super(KiwiWaterfallRecorder, self).__init__()
+        self._options = options
+        self._isWF = True
+        freq = options.frequency
+        #print "%s:%s freq=%d" % (options.server_host, options.server_port, freq)
+        self._freq = freq
+        self._start_ts = None
+
+        # xxx
+        self._squelch_on_seq = None
+        self._nf_array = array.array('i')
+        for x in xrange(65):
+            self._nf_array.insert(x, 0)
+        self._nf_samples = 0
+        self._nf_index = 0
+        self._num_channels = 2 if options.modulation == 'iq' else 1
+        self._last_gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], [0,0,0,0]))
+
+    def _setup_rx_params(self):
+        self._set_zoom_start(0, 0)
+        self._set_maxdb_mindb(-10, -110)    # needed, but values don't matter
+        #self._set_wf_comp(True)
+        self._set_wf_comp(False)
+        self._set_wf_speed(1)   # 1 Hz update
+        self.set_inactivity_timeout(0)
+        self.set_name('kiwirecorder.py')
+
+    def _process_waterfall_samples(self, seq, samples):
+        nbins = len(samples)
+        bins = nbins-1
+        max = -1
+        min = 256
+        bmax = bmin = 0
+        i = 0
+        for s in samples:
+            if s > max:
+                max = s
+                bmax = i
+            if s < min:
+                min = s
+                bmin = i
+            i += 1
+        span = 30000
+        print "wf samples %d bins %d..%d dB %.1f..%.1f kHz rbw %d kHz" % (nbins, min-255, max-255, span*bmin/bins, span*bmax/bins, span/bins)
 
     def _get_output_filename(self):
         ts  = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
@@ -243,6 +324,19 @@ def main():
                       action='callback',
                       callback_args=(float,),
                       callback=get_comma_separated_args)
+    parser.add_option('-z', '--zoom',
+                      dest='zoom', type='int', default=0,
+                      help='Zoom level 0-14')
+    parser.add_option('--wf',
+                      dest='waterfall',
+                      default=False,
+                      action='store_true',
+                      help='Process waterfall data instead of audio')
+    parser.add_option('--snd',
+                      dest='sound',
+                      default=False,
+                      action='store_true',
+                      help='Also process sound data when in waterfall mode')
 
     (options, unused_args) = parser.parse_args()
 
@@ -251,15 +345,30 @@ def main():
     run_event = threading.Event()
     run_event.set()
 
-    options   = options_cross_product(options)
-    recorders = [Worker(args=(KiwiRecorder(opt),opt,run_event)) for i,opt in enumerate(options)]
+    gopt = options
+    options = options_cross_product(options)
+
+    snd_recorders = []
+    if not gopt.waterfall or (gopt.waterfall and gopt.sound):
+        snd_recorders = [Worker(args=(KiwiSoundRecorder(opt),opt,run_event)) for i,opt in enumerate(options)]
+
+    wf_recorders = []
+    if gopt.waterfall:
+        for i,opt in enumerate(options):
+            wf_recorders.append(Worker(args=(KiwiWaterfallRecorder(opt),opt,run_event)))
 
     try:
-        for i,r in enumerate(recorders):
+        for i,r in enumerate(snd_recorders):
             if i!=0 and options[i-1].server_host == options[i].server_host:
                 time.sleep(2)
             r.start()
-            print "started recorder %d" % i
+            print "started sound recorder %d" % i
+
+        for i,r in enumerate(wf_recorders):
+            if i!=0 and options[i-1].server_host == options[i].server_host:
+                time.sleep(2)
+            r.start()
+            print "started waterfall recorder %d" % i
 
         while True:
             time.sleep(.1)
