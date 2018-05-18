@@ -5,6 +5,7 @@ import logging
 import socket
 import struct
 import time
+import numpy as np
 
 import wsclient
 
@@ -151,7 +152,7 @@ class KiwiSDRStreamBase(object):
 class KiwiSDRStream(KiwiSDRStreamBase):
     """KiwiSDR WebSocket stream client: the SND stream."""
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self._decoder = ImaAdpcmDecoder()
         self._sample_rate = None
         self._version_major = None
@@ -241,8 +242,11 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         if tag == 'MSG':
             self._process_msg(body)
         elif tag == 'SND':
-            self._process_aud(body)
-            # Ensure we don't get kicked due to timeouts
+            try:
+                self._process_aud(body)
+            except Exception as e:
+                print e
+                # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         elif tag == 'W/F':
             self._process_wf(body)
@@ -268,11 +272,13 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         rssi = (smeter & 0x0FFF) // 10 - 127
         if self._modulation == 'iq':
             gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], struct.unpack('<BBII', data[0:10])))
-            data  = data[10:]
+            data = data[10:]
             count = len(data) // 2
-            data  = struct.unpack('>%dh' % count, data)
-            samples = [ complex(data[i+0], data[i+1]) for i in xrange(0, count, 2) ]
-            self._process_iq_samples(seq, samples, rssi, gps)
+            samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.float32)
+            cs      = np.ndarray(count/2, dtype=np.complex64)
+            cs.real = samples[0:count:2]
+            cs.imag = samples[1:count:2]
+            self._process_iq_samples(seq, cs, rssi, gps)
         else:
             samples = self._decoder.decode(data)
             self._process_audio_samples(seq, samples, rssi)
