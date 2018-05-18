@@ -6,7 +6,8 @@ import socket
 import struct
 import time
 import numpy as np
-
+import urllib
+import json
 import wsclient
 
 #
@@ -159,6 +160,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         self._version_minor = None
         self._modulation = None
         self._compression = True
+        self._gps_pos = [0,0]
 
     def connect(self, host, port):
         #print "connect: %s:%s" % (host, port)
@@ -201,6 +203,10 @@ class KiwiSDRStream(KiwiSDRStreamBase):
     def _process_msg_param(self, name, value):
         if name == 'load_cfg':
             print "load_cfg: (cfg info not printed)"
+            d = json.loads(urllib.unquote(value))
+            self._gps_pos = map(float, urllib.unquote(d['rx_gps'])[1:-1].split(","))
+            print "GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1])
+            self._on_gnss_position(self._gps_pos)
         else:
             print "MSG (%s) %s: %s" % (self._stream_name, name, value)
         # Handle error conditions
@@ -299,6 +305,9 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             for b in map(fcn, data):
                 samples.append(b)
         self._process_waterfall_samples(seq, samples)
+
+    def _on_gnss_position(self, position):
+        pass
 
     def _on_sample_rate_change(self):
         pass

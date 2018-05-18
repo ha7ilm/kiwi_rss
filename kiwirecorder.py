@@ -1,9 +1,10 @@
 ## -*- python -*-
 
-import array, codecs, logging, os, struct, sys, time, traceback, copy, threading
+import array, codecs, logging, os, struct, sys, time, traceback, copy, threading, os
 from optparse import OptionParser
 
 import kiwiclient
+from kiwiworker import KiwiWorker
 
 def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     fp.write(struct.pack('<4sI4s', 'RIFF', filesize - 8, 'WAVE'))
@@ -119,6 +120,17 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
             samples.tofile(fp)
         self._update_wav_header()
 
+    def _on_gnss_position(self, pos):
+        if os.path.isdir('gnss_pos'):
+            pos_filename = 'gnss_pos/'+self._options.station+'.txt'
+            with open(pos_filename, 'w') as f:
+                f.write("d.%s = struct('coord', [%f,%f], 'host', '%s', 'port', %d);\n"
+                        % (self._options.station,
+                           pos[0], pos[1],
+                           self._options.server_host,
+                           self._options.server_port))
+
+
 
 class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
     def __init__(self, options):
@@ -200,44 +212,6 @@ class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
             samples.tofile(fp)
         self._update_wav_header()
 
-
-class Worker(threading.Thread):
-   def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, verbose=None):
-       super(Worker, self).__init__(group=group, target=target, name=name, verbose=verbose)
-       self._recorder, self._options, self._run_event = args
-
-   def _do_run(self):
-       return self._run_event.is_set()
-
-   def _sleep(self, seconds):
-       for i in range(seconds):
-           if not self._do_run():
-               break;
-           time.sleep(1)
-
-   def run(self):
-       while self._do_run():
-               try:
-                   self._recorder.connect(self._options.server_host, self._options.server_port)
-               except:
-                   print "Failed to connect, sleeping and reconnecting"
-                   self._sleep(15)
-                   continue
-
-               try:
-                   self._recorder.open()
-                   while self._do_run():
-                       self._recorder.run()
-               except kiwiclient.KiwiTooBusyError:
-                   print "Server %s:%d too busy now" % (self._options.server_host, self._options.server_port)
-                   self._sleep(15)
-                   continue
-               except Exception as e:
-                   traceback.print_exc()
-                   break
-
-       self._recorder.close()
-       print "exiting"
 
 
 def options_cross_product(options):
@@ -350,12 +324,12 @@ def main():
 
     snd_recorders = []
     if not gopt.waterfall or (gopt.waterfall and gopt.sound):
-        snd_recorders = [Worker(args=(KiwiSoundRecorder(opt),opt,run_event)) for i,opt in enumerate(options)]
+        snd_recorders = [KiwiWorker(args=(KiwiSoundRecorder(opt),opt,run_event)) for i,opt in enumerate(options)]
 
     wf_recorders = []
     if gopt.waterfall:
         for i,opt in enumerate(options):
-            wf_recorders.append(Worker(args=(KiwiWaterfallRecorder(opt),opt,run_event)))
+            wf_recorders.append(KiwiWorker(args=(KiwiWaterfallRecorder(opt),opt,run_event)))
 
     try:
         for i,r in enumerate(snd_recorders):
