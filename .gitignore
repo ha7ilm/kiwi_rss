@@ -2,3 +2,7 @@
 *.png
 *.wav
 log*
+*~
+gnss_pos/
+*.o
+*.oct

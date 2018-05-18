@@ -5,7 +5,9 @@ import logging
 import socket
 import struct
 import time
-
+import numpy as np
+import urllib
+import json
 import wsclient
 
 #
@@ -151,13 +153,14 @@ class KiwiSDRStreamBase(object):
 class KiwiSDRStream(KiwiSDRStreamBase):
     """KiwiSDR WebSocket stream client: the SND stream."""
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self._decoder = ImaAdpcmDecoder()
         self._sample_rate = None
         self._version_major = None
         self._version_minor = None
         self._modulation = None
         self._compression = True
+        self._gps_pos = [0,0]
 
     def connect(self, host, port):
         #print "connect: %s:%s" % (host, port)
@@ -200,6 +203,10 @@ class KiwiSDRStream(KiwiSDRStreamBase):
     def _process_msg_param(self, name, value):
         if name == 'load_cfg':
             print "load_cfg: (cfg info not printed)"
+            d = json.loads(urllib.unquote(value))
+            self._gps_pos = map(float, urllib.unquote(d['rx_gps'])[1:-1].split(","))
+            print "GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1])
+            self._on_gnss_position(self._gps_pos)
         else:
             print "MSG (%s) %s: %s" % (self._stream_name, name, value)
         # Handle error conditions
@@ -241,8 +248,11 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         if tag == 'MSG':
             self._process_msg(body)
         elif tag == 'SND':
-            self._process_aud(body)
-            # Ensure we don't get kicked due to timeouts
+            try:
+                self._process_aud(body)
+            except Exception as e:
+                print e
+                # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         elif tag == 'W/F':
             self._process_wf(body)
@@ -268,11 +278,13 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         rssi = (smeter & 0x0FFF) // 10 - 127
         if self._modulation == 'iq':
             gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], struct.unpack('<BBII', data[0:10])))
-            data  = data[10:]
+            data = data[10:]
             count = len(data) // 2
-            data  = struct.unpack('>%dh' % count, data)
-            samples = [ complex(data[i+0], data[i+1]) for i in xrange(0, count, 2) ]
-            self._process_iq_samples(seq, samples, rssi, gps)
+            samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.float32)
+            cs      = np.ndarray(count/2, dtype=np.complex64)
+            cs.real = samples[0:count:2]
+            cs.imag = samples[1:count:2]
+            self._process_iq_samples(seq, cs, rssi, gps)
         else:
             samples = self._decoder.decode(data)
             self._process_audio_samples(seq, samples, rssi)
@@ -293,6 +305,9 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             for b in map(fcn, data):
                 samples.append(b)
         self._process_waterfall_samples(seq, samples)
+
+    def _on_gnss_position(self, position):
+        pass
 
     def _on_sample_rate_change(self):
         pass
