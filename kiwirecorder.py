@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 ## -*- python -*-
 
 import array, codecs, logging, os, struct, sys, time, traceback, copy, threading, os
