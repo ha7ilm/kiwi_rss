@@ -45,6 +45,8 @@ HOST_WF = www
 wf:
 	python kiwirecorder.py --wf -s $(HOST_WF) -f 1440 --log_level info
 
+micro:
+	python microkiwi_waterfall.py -s $(HOST_WF) -z 0 -o 0
 
 help:
 	python kiwifax.py --help
