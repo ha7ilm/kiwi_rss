@@ -110,7 +110,10 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         """Output to a file on the disk."""
         # print '_write_samples', args
         now = time.gmtime()
-        if self._start_ts is None or (self._options.filename == '' and self._start_ts.tm_hour != now.tm_hour):
+        sec_of_day = lambda x: 3600*x.tm_hour + 60*x.tm_min + x.tm_sec
+        if self._start_ts is None or (self._options.filename == '' and
+                                      self._options.dt != 0 and
+                                      sec_of_day(now)/self._options.dt != sec_of_day(self._start_ts)/self._options.dt):
             self._start_ts = now
             self._start_time = time.time()
             # Write a static WAV header
@@ -249,6 +252,10 @@ def main():
                       dest='modulation',
                       type='string', default='am',
                       help='Modulation; one of am, lsb, usb, cw, nbfm, iq')
+    parser.add_option('--dt-sec',
+                      dest='dt',
+                      type='int', default=0,
+                      help='start a new file when mod(sec_of_day,dt) == 0')
     parser.add_option('-L', '--lp-cutoff',
                       dest='lp_cut',
                       type='float', default=100,
