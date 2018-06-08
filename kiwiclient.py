@@ -126,7 +126,8 @@ class KiwiSDRStreamBase(object):
         self._stream = Stream(request, stream_option)
 
     def _send_message(self, msg):
-        #print "SET (%s) %s" % (self._stream_name, msg)
+        if msg != 'SET keepalive':
+            logging.debug("send SET (%s) %s", self._stream_name, msg)
         self._stream.send_message(msg)
 
     def _set_auth(self, client_type, password=''):
@@ -202,18 +203,18 @@ class KiwiSDRStream(KiwiSDRStreamBase):
 
     def _process_msg_param(self, name, value):
         if name == 'load_cfg':
-            print "load_cfg: (cfg info not printed)"
+            logging.info("load_cfg: (cfg info not printed)")
             d = json.loads(urllib.unquote(value))
             self._gps_pos = map(float, urllib.unquote(d['rx_gps'])[1:-1].split(","))
             print "GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1])
             self._on_gnss_position(self._gps_pos)
         else:
-            print "MSG (%s) %s: %s" % (self._stream_name, name, value)
+            logging.debug("recv MSG (%s) %s: %s", self._stream_name, name, value)
         # Handle error conditions
         if name == 'too_busy':
             raise KiwiTooBusyError('all %s client slots taken' % value)
         if name == 'badp' and value == '1':
-            raise KiwiBadPasswordError()
+            raise KiwiBadPasswordError('bad password')
         if name == 'down':
             raise KiwiDownError('server is down atm')
         # Handle data items
@@ -252,7 +253,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
                 self._process_aud(body)
             except Exception as e:
                 print e
-                # Ensure we don't get kicked due to timeouts
+            # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         elif tag == 'W/F':
             self._process_wf(body)
@@ -331,7 +332,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             self._set_agc(True)
 
     def open(self):
-        self._set_auth('kiwi', '')
+        self._set_auth('kiwi', self._options.password)
 
     def close(self):
         try:
@@ -344,6 +345,8 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         """Run the client."""
         received = self._stream.receive_message()
         self._process_ws_message(received)
-
+        tlimit = self._options.tlimit
+        if tlimit != None and self._start_time != None and time.time() - self._start_time > tlimit:
+            raise KiwiError('time limit reached')
 
 # EOF

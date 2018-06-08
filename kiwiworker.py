@@ -41,6 +41,6 @@ class KiwiWorker(threading.Thread):
                 traceback.print_exc()
                 break
 
-        self._recorder.close()
-        print "exiting"
-
+        self._run_event.clear()   # tell all other threads to stop
+        # hangs for some reason
+        #self._recorder.close()

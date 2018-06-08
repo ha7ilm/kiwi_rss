@@ -25,6 +25,7 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         #print "%s:%s freq=%d" % (options.server_host, options.server_port, freq)
         self._freq = freq
         self._start_ts = None
+        self._start_time = None
         self._squelch_on_seq = None
         self._nf_array = array.array('i')
         for x in xrange(65):
@@ -47,10 +48,11 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         else:
             self.set_agc(on=True)
         self.set_inactivity_timeout(0)
-        self.set_name('kiwirecorder.py')
+        self.set_name(self._options.user)
 
     def _process_audio_samples(self, seq, samples, rssi):
         sys.stdout.write('\rBlock: %08x, RSSI: %-04d' % (seq, rssi))
+        sys.stdout.flush()
         if self._nf_samples < len(self._nf_array) or self._squelch_on_seq is None:
             self._nf_array[self._nf_index] = rssi
             self._nf_index += 1
@@ -76,6 +78,7 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
             print "\nSquelch closed"
             self._squelch_on_seq = None
             self._start_ts = None
+            self._start_time = None
             return
         self._write_samples(samples, {})
 
@@ -89,9 +92,12 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         self._write_samples(s, gps)
 
     def _get_output_filename(self):
-        ts  = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
-        sta = '' if self._options.station is "None" else '_'+ self._options.station
-        return '%s_%d%s_%s.wav' % (ts, int(self._freq * 1000), sta, self._options.modulation)
+        station = '' if self._options.station is "None" else '_'+ self._options.station
+        if self._options.filename != '':
+            return '%s%s.wav' % (self._options.filename, station)
+        else:
+            ts  = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
+            return '%s_%d%s_%s.wav' % (ts, int(self._freq * 1000), station, self._options.modulation)
 
     def _update_wav_header(self):
         with open(self._get_output_filename(), 'r+b') as fp:
@@ -104,8 +110,9 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         """Output to a file on the disk."""
         # print '_write_samples', args
         now = time.gmtime()
-        if self._start_ts is None or self._start_ts.tm_hour != now.tm_hour:
+        if self._start_ts is None or (self._options.filename == '' and self._start_ts.tm_hour != now.tm_hour):
             self._start_ts = now
+            self._start_time = time.time()
             # Write a static WAV header
             with open(self._get_output_filename(), 'wb') as fp:
                 _write_wav_header(fp, 100, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
@@ -130,8 +137,6 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
                            pos[0], pos[1],
                            self._options.server_host,
                            self._options.server_port))
-
-
 
 class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
     def __init__(self, options):
@@ -160,7 +165,7 @@ class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
         self._set_wf_comp(False)
         self._set_wf_speed(1)   # 1 Hz update
         self.set_inactivity_timeout(0)
-        self.set_name('kiwirecorder.py')
+        self.set_name(self._options.user)
 
     def _process_waterfall_samples(self, seq, samples):
         nbins = len(samples)
@@ -180,41 +185,6 @@ class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
         span = 30000
         print "wf samples %d bins %d..%d dB %.1f..%.1f kHz rbw %d kHz" % (nbins, min-255, max-255, span*bmin/bins, span*bmax/bins, span/bins)
 
-    def _get_output_filename(self):
-        ts  = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
-        sta = '' if self._options.station is "None" else '_'+ self._options.station
-        return '%s_%d%s_%s.wav' % (ts, int(self._freq * 1000), sta, self._options.modulation)
-
-    def _update_wav_header(self):
-        with open(self._get_output_filename(), 'r+b') as fp:
-            fp.seek(0, os.SEEK_END)
-            filesize = fp.tell()
-            fp.seek(0, os.SEEK_SET)
-            _write_wav_header(fp, filesize, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
-
-    def _write_samples(self, samples, *args):
-        """Output to a file on the disk."""
-        # print '_write_samples', args
-        now = time.gmtime()
-        if self._start_ts is None or self._start_ts.tm_hour != now.tm_hour:
-            self._start_ts = now
-            # Write a static WAV header
-            with open(self._get_output_filename(), 'wb') as fp:
-                _write_wav_header(fp, 100, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
-            print "\nStarted a new file: %s" % (self._get_output_filename())
-        with open(self._get_output_filename(), 'ab') as fp:
-            if self._options.is_kiwi_wav:
-                gps = args[0]
-                logging.info('%s: last_gps_solution=%d gpssec=(%d,%d)' % (self._get_output_filename(), gps['last_gps_solution'], gps['gpssec'], gps['gpsnsec']));
-                fp.write(struct.pack('<4sIBBII', 'kiwi', 10, gps['last_gps_solution'], 0, gps['gpssec'], gps['gpsnsec']))
-                sample_size = samples.itemsize * len(samples)
-                fp.write(struct.pack('<4sI', 'data', sample_size))
-            # TODO: something better than that
-            samples.tofile(fp)
-        self._update_wav_header()
-
-
-
 def options_cross_product(options):
     """build a list of options according to the number of servers specified"""
     def _sel_entry(i, l):
@@ -225,7 +195,7 @@ def options_cross_product(options):
     for i,s in enumerate(options.server_host):
         opt_single = copy.copy(options)
         opt_single.server_host = s;
-        for x in ['server_port', 'frequency', 'agc_gain', 'station']:
+        for x in ['server_port', 'password', 'frequency', 'agc_gain', 'filename', 'station', 'user']:
             opt_single.__dict__[x] = _sel_entry(i, opt_single.__dict__[x])
         l.append(opt_single)
     return l
@@ -256,6 +226,18 @@ def main():
                       action='callback',
                       callback_args=(int,),
                       callback=get_comma_separated_args)
+    parser.add_option('--pw', '--password',
+                      dest='password', type='string', default='',
+                      help='Kiwi login password (if required, can be a comma delimited list)',
+                      action='callback',
+                      callback_args=(str,),
+                      callback=get_comma_separated_args)
+    parser.add_option('-u', '--user',
+                      dest='user', type='string', default='kiwirecorder.py',
+                      help='Kiwi connection user name',
+                      action='callback',
+                      callback_args=(str,),
+                      callback=get_comma_separated_args)
     parser.add_option('-f', '--freq',
                       dest='frequency',
                       type='string', default=1000,
@@ -275,6 +257,13 @@ def main():
                       dest='hp_cut',
                       type='float', default=2600,
                       help='Low-pass cutoff frequency, in Hz.')
+    parser.add_option('--fn', '--filename',
+                      dest='filename',
+                      type='string', default='',
+                      help='use fixed filename instead of generated filenames (optional station ID(s) will apply)',
+                      action='callback',
+                      callback_args=(str,),
+                      callback=get_comma_separated_args)
     parser.add_option('--station',
                       dest='station',
                       type='string', default="None",
@@ -282,15 +271,19 @@ def main():
                       action='callback',
                       callback_args=(str,),
                       callback=get_comma_separated_args)
-    parser.add_option('-T', '--threshold',
-                      dest='thresh',
-                      type='float', default=0,
-                      help='Squelch threshold, in dB.')
     parser.add_option('-w', '--kiwi-wav',
                       dest='is_kiwi_wav',
                       default=False,
                       action='store_true',
                       help='wav file format including KIWI header (GPS time-stamps) only for IQ mode')
+    parser.add_option('--tlimit', '--time-limit',
+                      dest='tlimit',
+                      type='float', default=None,
+                      help='Record time limit in seconds')
+    parser.add_option('-T', '--threshold',
+                      dest='thresh',
+                      type='float', default=0,
+                      help='Squelch threshold, in dB.')
     parser.add_option('-g', '--agc-gain',
                       dest='agc_gain',
                       type='string',
@@ -335,22 +328,27 @@ def main():
     try:
         for i,r in enumerate(snd_recorders):
             if i!=0 and options[i-1].server_host == options[i].server_host:
-                time.sleep(2)
+                time.sleep(1)
             r.start()
             print "started sound recorder %d" % i
 
         for i,r in enumerate(wf_recorders):
             if i!=0 and options[i-1].server_host == options[i].server_host:
-                time.sleep(2)
+                time.sleep(1)
             r.start()
             print "started waterfall recorder %d" % i
 
-        while True:
+        while run_event.is_set():
             time.sleep(.1)
     except KeyboardInterrupt:
         run_event.clear()
         [t.join() for t in threading.enumerate() if t is not threading.currentThread()]
-        print "threads successfully closed"
+        print "KeyboardInterrupt: threads successfully closed"
+    except Exception as e:
+        traceback.print_exc()
+        run_event.clear()
+        [t.join() for t in threading.enumerate() if t is not threading.currentThread()]
+        print "Exception: threads successfully closed"
 
 if __name__ == '__main__':
     main()

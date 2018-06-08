@@ -1,3 +1,23 @@
+#
+# Example uses of kiwirecorder.py and kiwifax.py
+#
+
+# record WSPR audio to file
+#
+# "-f" frequency is dial frequency, i.e. WSPR center frequency minus passband center (BFO)
+# e.g. 40m: cf = 7040.1, so if pb center = 750 then dial = 7040.1 - 0.750 = 7039.35
+# NB: most WSPR programs use a pb center of 1500 Hz, not 750 which we use because we think it's easier to listen to
+
+HOST_WSPR = www
+
+wspr:
+	python kiwirecorder.py -s $(HOST_WSPR) --password=wspr --filename=wspr_40m -f 7039.35 --user=WSPR_40m -m iq -L 600 -H 900 --tlimit=110 --log_level=debug
+
+# multiple connections
+wspr2:
+	python kiwirecorder.py -s $(HOST_WSPR),$(HOST_WSPR) --password=wspr --filename=wspr_40m,wspr_30m -f 7039.35,10139.45 --user=WSPR_40m,WSPR_30m -m iq -L 600 -H 900 --tlimit=110
+
+
 # DRM
 # UK
 HOST_DRM = southwest.ddns.net
