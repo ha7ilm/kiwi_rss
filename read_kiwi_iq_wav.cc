@@ -56,7 +56,7 @@ DEFUN_DLD (read_kiwi_iq_wav, args, nargout, "[d,sample_rate]=read_kiwi_wav(\"<wa
   if (error_state)
     return retval;
 
-  std::ifstream file(filename, std::ios::binary);
+  std::ifstream file(filename.c_str(), std::ios::binary);
 
   octave_value_list cell_z, cell_last, cell_gpssec, cell_gpsnsec;
 
