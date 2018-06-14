@@ -6,7 +6,11 @@ import socket
 import struct
 import time
 import numpy as np
-import urllib
+try:
+    import urllib.parse as urllib
+except ImportError:
+    import urllib
+
 import json
 import wsclient
 
@@ -100,8 +104,8 @@ class KiwiSDRStreamBase(object):
         pass
 
     def _process_message(self, tag, body):
-        print 'Unknown message tag: %s' % (tag)
-        print repr(body)
+        print('Unknown message tag: %s' % tag)
+        print(repr(body))
 
     def _prepare_stream(self, host, port, which):
         import mod_pywebsocket.common
@@ -109,9 +113,7 @@ class KiwiSDRStreamBase(object):
         from mod_pywebsocket.stream import StreamOptions
 
         self._stream_name = which;
-        self._socket = socket.socket()
-        self._socket.settimeout(self._options.socket_timeout)
-        self._socket.connect((host, port))
+        self._socket = socket.create_connection(address=(host, port), timeout=self._options.socket_timeout)
         uri = '/%d/%s' % (int(time.time()), which)
         handshake = wsclient.ClientHandshakeProcessor(self._socket, host, port)
         handshake.handshake(uri)
@@ -128,7 +130,7 @@ class KiwiSDRStreamBase(object):
     def _send_message(self, msg):
         if msg != 'SET keepalive':
             logging.debug("send SET (%s) %s", self._stream_name, msg)
-        self._stream.send_message(msg)
+        self._stream.send_message(str(msg))
 
     def _set_auth(self, client_type, password=''):
         self._send_message('SET auth t=%s p=%s' % (client_type, password))
@@ -146,7 +148,7 @@ class KiwiSDRStreamBase(object):
         self._send_message('SET keepalive')
 
     def _process_ws_message(self, message):
-        tag = message[0:3]
+        tag = message[0:3].decode()
         body = message[4:]
         self._process_message(tag, body)
 
@@ -164,7 +166,6 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         self._gps_pos = [0,0]
 
     def connect(self, host, port):
-        #print "connect: %s:%s" % (host, port)
         self._prepare_stream(host, port, 'W/F' if self._isWF else 'SND')
 
     def set_mod(self, mod, lc, hc, freq):
@@ -204,9 +205,9 @@ class KiwiSDRStream(KiwiSDRStreamBase):
     def _process_msg_param(self, name, value):
         if name == 'load_cfg':
             logging.info("load_cfg: (cfg info not printed)")
-            d = json.loads(urllib.unquote(value))
-            self._gps_pos = map(float, urllib.unquote(d['rx_gps'])[1:-1].split(","))
-            print "GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1])
+            d = json.loads(urllib.unquote(value.decode()))
+            self._gps_pos = [float(x) for x in urllib.unquote(d['rx_gps'])[1:-1].split(",")]
+            print("GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1]))
             self._on_gnss_position(self._gps_pos)
         else:
             logging.debug("recv MSG (%s) %s: %s", self._stream_name, name, value)
@@ -252,7 +253,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             try:
                 self._process_aud(body)
             except Exception as e:
-                print e
+                print(e)
             # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         elif tag == 'W/F':
@@ -260,17 +261,17 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         else:
-            print "unknown tag %s" % tag
+            print("unknown tag %s" % tag)
             pass
 
     def _process_msg(self, body):
-        for pair in body.split(' '):
-            if "=" in pair:
-                name, value = pair.split('=', 1)
-                self._process_msg_param(name, value)
+        for pair in body.split(b' '):
+            if b'=' in pair:
+                name, value = pair.split(b'=', 1)
+                self._process_msg_param(name.decode(), value)
             else:
                 name = pair
-                self._process_msg_param(name, None)
+                self._process_msg_param(name.decode(), None)
 
     def _process_aud(self, body):
         seq = struct.unpack('<I', body[0:4])[0]
@@ -282,7 +283,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             data = data[10:]
             count = len(data) // 2
             samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.float32)
-            cs      = np.ndarray(count/2, dtype=np.complex64)
+            cs      = np.ndarray(count//2, dtype=np.complex64)
             cs.real = samples[0:count:2]
             cs.imag = samples[1:count:2]
             self._process_iq_samples(seq, cs, rssi, gps)
@@ -339,7 +340,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             self._stream.close_connection()
             self._socket.close()
         except Exception as e:
-            print "exception: %s" % e
+            print("exception: %s" % e)
 
     def run(self):
         """Run the client."""
