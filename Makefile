@@ -69,13 +69,24 @@ two:
 	python kiwirecorder.py -s $(HOST_IQ1),$(HOST_IQ2) -f 77.5,60 --station=DCF77,MSF -m iq -L -5000 -H 5000
 
 
-# check GPS timestamps
+# IQ file with GPS timestamps
 
-HOST_FAX = $(HOST)
+HOST_GPS = $(HOST)
 #HOST_GPS = kiwisdr.sk3w.se
 
 gps:
 	python kiwirecorder.py -s $(HOST_GPS) -f 77.5 --station=DCF77 --kiwi-wav --log_level info -m iq -L -5000 -H 5000
+gps2:
+	python kiwirecorder.py -s $(HOST_GPS) -f 1440 --kiwi-wav -m iq -L -5000 -H 5000
+
+
+# IQ file without GPS timestamps
+# Should playback using standard .wav file player
+
+HOST_IQ = $(HOST)
+
+iq:
+	python kiwirecorder.py -s $(HOST_IQ) -f 1440 -m iq -L -5000 -H 5000
 
 
 # process waterfall data
