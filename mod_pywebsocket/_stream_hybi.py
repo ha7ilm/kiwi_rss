@@ -90,13 +90,11 @@ def create_length_header(length, mask):
     if length < 0:
         raise ValueError('length must be non negative integer')
     elif length <= 125:
-        return struct.pack('B', mask_bit | length) ##chr(mask_bit | length)
+        return struct.pack('B', mask_bit | length)
     elif length < (1 << 16):
         return struct.pack('B', mask_bit | 126) + struct.pack('!H', length)
-    ##return chr(mask_bit | 126) + struct.pack('!H', length)
     elif length < (1 << 63):
         return struct.pack('B', mask_bit | 127) + struct.pack('!Q', length)
-    ##return chr(mask_bit | 127) + struct.pack('!Q', length)
     else:
         raise ValueError('Payload is too big for one frame')
 
@@ -122,7 +120,7 @@ def create_header(opcode, payload_length, fin, rsv1, rsv2, rsv3, mask):
     first_byte = ((fin << 7)
                   | (rsv1 << 6) | (rsv2 << 5) | (rsv3 << 4)
                   | opcode)
-    header += struct.pack('B', first_byte) ## chr(first_byte)
+    header += struct.pack('B', first_byte)
     header += create_length_header(payload_length, mask)
 
     return header
