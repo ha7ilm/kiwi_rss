@@ -32,12 +32,10 @@
 in HTTP RFC http://www.ietf.org/rfc/rfc2616.txt.
 """
 
-import sys
-if sys.version_info[0] < 3:
-    import urlparse
-else:
+try:
     from urllib.parse import urlparse
-
+except ImportError:
+    import urlparse
 
 _SEPARATORS = '()<>@,;:\\"/[]?={} \t'
 
