@@ -154,7 +154,7 @@ class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
         # xxx
         self._squelch_on_seq = None
         self._nf_array = array.array('i')
-        for x in xrange(65):
+        for x in range(65):
             self._nf_array.insert(x, 0)
         self._nf_samples = 0
         self._nf_index = 0
@@ -186,7 +186,8 @@ class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
                 bmin = i
             i += 1
         span = 30000
-        print("wf samples %d bins %d..%d dB %.1f..%.1f kHz rbw %d kHz" % nbins, min-255, max-255, span*bmin/bins, span*bmax/bins, span/bins)
+        print("wf samples %d bins %d..%d dB %.1f..%.1f kHz rbw %d kHz"
+              % (nbins, min-255, max-255, span*bmin/bins, span*bmax/bins, span/bins))
 
 def options_cross_product(options):
     """build a list of options according to the number of servers specified"""
