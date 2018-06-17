@@ -35,7 +35,7 @@ class KiwiWorker(threading.Thread):
                 while self._do_run():
                     self._recorder.run()
             except KiwiTooBusyError:
-                print("Server %s:%d too busy now" % self._options.server_host, self._options.server_port)
+                print("Server %s:%d too busy now" % (self._options.server_host, self._options.server_port))
                 self._sleep(15)
                 continue
             except Exception as e:
