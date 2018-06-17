@@ -36,7 +36,7 @@ class KiwiIQWavReader(collections.Iterator):
         if chunk.getname() != b'fmt ':
             raise KiwiIQWavError('fmt chunk is missing')
 
-        self._read_chunk_fmt(chunk)
+        self._proc_chunk_fmt(chunk)
         chunk.skip()
 
     ## for python3
@@ -49,34 +49,17 @@ class KiwiIQWavReader(collections.Iterator):
             chunk = Chunk(self._file, bigendian = 0)
             if chunk.getname() != b'kiwi':
                 raise KiwiIQWavError('missing KiwiSDR GNSS time stamp')
-            self.last_gps_solution,dummy,gpssec,gpsnsec = struct.unpack('<BBII', chunk.read(10))
-            self.gpssec = gpssec + 1e-9*gpsnsec
+
+            self._proc_chunk_kiwi(chunk)
             chunk.skip()
 
             chunk = Chunk(self._file, bigendian = 0)
             if chunk.getname() != b'data':
                 raise KiwiIQWavError('missing WAVE data chunk')
 
-            t = None
-            z = np.frombuffer(chunk.read(chunk.getsize()), dtype=np.int16).astype(np.float32).view(np.complex64)/65535
-            n = len(z)
-            if self._last_gpssec >= 0:
-                if self._frame_counter < 3:
-                    self._samplerate = n/(self.gpssec - self._last_gpssec)
-                else:
-                    self._samplerate = 0.9*self._samplerate + 0.1*n/(self.gpssec - self._last_gpssec)
-
-            if self._frame_counter >= 2:
-                t = np.arange(start    = self.gpssec,
-                              stop     = self.gpssec + (n-0.5)/self._samplerate,
-                              step     = 1/self._samplerate,
-                              dtype    = np.float64)
-                self.process_iq_samples(t,z)
-
-            self._last_gpssec = self.gpssec;
+            tz = self._proc_chunk_data(chunk)
             chunk.skip()
-            self._frame_counter += (self._frame_counter < 3)
-            return t,z
+            return tz
         except EOFError:
             raise StopIteration
 
@@ -84,9 +67,38 @@ class KiwiIQWavReader(collections.Iterator):
         ## print(len(t), len(z))
         pass
 
-    def _read_chunk_fmt(self, chunk):
+    def get_samplerate(self):
+        return self._samplerate
+
+    def _proc_chunk_fmt(self, chunk):
         wFormatTag, nchannels, self._samplerate, dwAvgBytesPerSec, wBlockAlign = struct.unpack('<HHLLH', chunk.read(chunk.getsize()-2))
         assert wFormatTag == 1 and nchannels == 2 and wBlockAlign == 4, 'this is not a KiwiSDR IQ wav file'
+
+    def _proc_chunk_kiwi(self, chunk):
+        self.last_gps_solution,dummy,gpssec,gpsnsec = struct.unpack('<BBII', chunk.read(10))
+        self.gpssec = gpssec + 1e-9*gpsnsec
+
+    def _proc_chunk_data(self, chunk):
+        t = None
+        z = np.frombuffer(chunk.read(chunk.getsize()), dtype=np.int16).astype(np.float32).view(np.complex64)/65535
+        n = len(z)
+        if self._last_gpssec >= 0:
+            if self._frame_counter < 3:
+                self._samplerate = n/(self.gpssec - self._last_gpssec)
+            else:
+                self._samplerate = 0.9*self._samplerate + 0.1*n/(self.gpssec - self._last_gpssec)
+
+        if self._frame_counter >= 2:
+            t = np.arange(start = self.gpssec,
+                          stop  = self.gpssec + (n-0.5)/self._samplerate,
+                          step  = 1/self._samplerate,
+                          dtype = np.float64)
+            ##t = self.gpssec + np.array(range(n))/self._samplerate
+            self.process_iq_samples(t,z)
+
+        self._last_gpssec = self.gpssec;
+        self._frame_counter += (self._frame_counter < 3)
+        return t,z
 
 def read_kiwi_iq_wav(filename):
     t = []
