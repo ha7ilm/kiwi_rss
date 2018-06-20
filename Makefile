@@ -19,11 +19,11 @@ endif
 HOST_WSPR = $(HOST)
 
 wspr:
-	python kiwirecorder.py -s $(HOST_WSPR) --password=wspr --filename=wspr_40m -f 7039.35 --user=WSPR_40m -m iq -L 600 -H 900 --tlimit=110 --log_level=debug
+	python kiwirecorder.py -s $(HOST_WSPR) --filename=wspr_40m -f 7039.35 --user=WSPR_40m -m iq -L 600 -H 900 --tlimit=110 --log_level=debug
 
 # multiple connections
 wspr2:
-	python kiwirecorder.py -s $(HOST_WSPR),$(HOST_WSPR) --password=wspr --filename=wspr_40m,wspr_30m -f 7039.35,10139.45 --user=WSPR_40m,WSPR_30m -m iq -L 600 -H 900 --tlimit=110
+	python kiwirecorder.py -s $(HOST_WSPR),$(HOST_WSPR) --filename=wspr_40m,wspr_30m -f 7039.35,10139.45 --user=WSPR_40m,WSPR_30m -m iq -L 600 -H 900 --tlimit=110
 
 
 # DRM
@@ -67,6 +67,15 @@ HOST_IQ2 = southwest.ddns.net
 
 two:
 	python kiwirecorder.py -s $(HOST_IQ1),$(HOST_IQ2) -f 77.5,60 --station=DCF77,MSF -m iq -L -5000 -H 5000
+
+
+# real mode (non-IQ) file
+# Should playback using standard .wav file player
+
+HOST_REAL = $(HOST)
+
+real:
+	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000 -T 3
 
 
 # IQ file with GPS timestamps
