@@ -53,33 +53,34 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
     def _process_audio_samples(self, seq, samples, rssi):
         sys.stdout.write('\rBlock: %08x, RSSI: %-04d' % (seq, rssi))
         sys.stdout.flush()
-        if self._nf_samples < len(self._nf_array) or self._squelch_on_seq is None:
-            self._nf_array[self._nf_index] = rssi
-            self._nf_index += 1
-            if self._nf_index == len(self._nf_array):
-                self._nf_index = 0
-        if self._nf_samples < len(self._nf_array):
-            self._nf_samples += 1
-            return
+        if self._options.thresh is not None:
+            if self._nf_samples < len(self._nf_array) or self._squelch_on_seq is None:
+                self._nf_array[self._nf_index] = rssi
+                self._nf_index += 1
+                if self._nf_index == len(self._nf_array):
+                    self._nf_index = 0
+            if self._nf_samples < len(self._nf_array):
+                self._nf_samples += 1
+                return
 
-        median_nf = sorted(self._nf_array)[len(self._nf_array) // 3]
-        rssi_thresh = median_nf + self._options.thresh
-        is_open = self._squelch_on_seq is not None
-        if is_open:
-            rssi_thresh -= 6
-        rssi_green = rssi >= rssi_thresh
-        if rssi_green:
-            self._squelch_on_seq = seq
-            is_open = True
-        sys.stdout.write(' Median: %-04d Thr: %-04d %s' % (median_nf, rssi_thresh, ("s", "S")[is_open]))
-        if not is_open:
-            return
-        if seq > self._squelch_on_seq + 45:
-            print "\nSquelch closed"
-            self._squelch_on_seq = None
-            self._start_ts = None
-            self._start_time = None
-            return
+            median_nf = sorted(self._nf_array)[len(self._nf_array) // 3]
+            rssi_thresh = median_nf + self._options.thresh
+            is_open = self._squelch_on_seq is not None
+            if is_open:
+                rssi_thresh -= 6
+            rssi_green = rssi >= rssi_thresh
+            if rssi_green:
+                self._squelch_on_seq = seq
+                is_open = True
+            sys.stdout.write(' Median: %-04d Thr: %-04d %s' % (median_nf, rssi_thresh, ("s", "S")[is_open]))
+            if not is_open:
+                return
+            if seq > self._squelch_on_seq + 45:
+                print "\nSquelch closed"
+                self._squelch_on_seq = None
+                self._start_ts = None
+                self._start_time = None
+                return
         self._write_samples(samples, {})
 
     def _process_iq_samples(self, seq, samples, rssi, gps):
@@ -289,7 +290,7 @@ def main():
                       help='Record time limit in seconds')
     parser.add_option('-T', '--threshold',
                       dest='thresh',
-                      type='float', default=0,
+                      type='float', default=None,
                       help='Squelch threshold, in dB.')
     parser.add_option('-g', '--agc-gain',
                       dest='agc_gain',
@@ -350,12 +351,12 @@ def main():
     except KeyboardInterrupt:
         run_event.clear()
         [t.join() for t in threading.enumerate() if t is not threading.currentThread()]
-        print "KeyboardInterrupt: threads successfully closed"
+        print "\nKeyboardInterrupt: threads successfully closed"
     except Exception as e:
         traceback.print_exc()
         run_event.clear()
         [t.join() for t in threading.enumerate() if t is not threading.currentThread()]
-        print "Exception: threads successfully closed"
+        print "\nException: threads successfully closed"
 
 if __name__ == '__main__':
     main()
