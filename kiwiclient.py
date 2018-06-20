@@ -179,7 +179,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         self._send_message('SET squelch=%d max=%d' % (sq, thresh))
 
     def set_autonotch(self, val):
-        self._send_message('SET autonotch=%d' % (val))
+        self._send_message('SET lms_autonotch=%d' % (val))
 
     def _set_ar_ok(self, ar_in, ar_out):
         self._send_message('SET AR OK in=%d out=%d' % (ar_in, ar_out))
