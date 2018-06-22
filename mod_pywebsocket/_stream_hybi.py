@@ -42,6 +42,10 @@ import os
 import struct
 import time
 
+import sys
+if sys.version_info > (3,):
+    buffer = memoryview
+
 from mod_pywebsocket import common
 from mod_pywebsocket import util
 from mod_pywebsocket._stream_base import BadOperationException
@@ -182,7 +186,6 @@ def parse_frame(receive_bytes, logger=None,
         ConnectionTerminatedException: when receive_bytes raises it.
         InvalidFrameException: when the frame contains invalid data.
     """
-
     if not logger:
         logger = logging.getLogger()
 
@@ -226,7 +229,7 @@ def parse_frame(receive_bytes, logger=None,
 
         extended_payload_length = receive_bytes(8)
         payload_length = struct.unpack(
-            '!Q', extended_payload_length)[0]
+            '!Q', buffer(extended_payload_length))[0]
         if payload_length > 0x7FFFFFFFFFFFFFFF:
             raise InvalidFrameException(
                 'Extended payload length >= 2^63')
@@ -242,7 +245,7 @@ def parse_frame(receive_bytes, logger=None,
 
         extended_payload_length = receive_bytes(2)
         payload_length = struct.unpack(
-            '!H', extended_payload_length)[0]
+            '!H', buffer(extended_payload_length))[0]
         if ws_version >= 13 and payload_length < 126:
             valid_length_encoding = False
             length_encoding_bytes = 2
@@ -631,7 +634,7 @@ class Stream(StreamBase):
                 'status code must be 2 octet')
         elif len(message) >= 2:
             self._request.ws_close_code = struct.unpack(
-                '!H', message[0:2])[0]
+                '!H', buffer(message[0:2]))[0]
             self._request.ws_close_reason = message[2:].decode(
                 'utf-8', 'replace')
             self._logger.debug(

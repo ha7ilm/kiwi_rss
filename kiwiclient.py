@@ -11,6 +11,10 @@ try:
 except ImportError:
     import urllib
 
+import sys
+if sys.version_info > (3,):
+    buffer = memoryview
+
 import json
 import wsclient
 
@@ -274,12 +278,12 @@ class KiwiSDRStream(KiwiSDRStreamBase):
                 self._process_msg_param(name.decode(), None)
 
     def _process_aud(self, body):
-        seq = struct.unpack('<I', body[0:4])[0]
-        smeter = struct.unpack('>H', body[4:6])[0]
+        seq = struct.unpack('<I', buffer(body[0:4]))[0]
+        smeter = struct.unpack('>H', buffer(body[4:6]))[0]
         data = body[6:]
         rssi = (smeter & 0x0FFF) // 10 - 127
         if self._modulation == 'iq':
-            gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], struct.unpack('<BBII', data[0:10])))
+            gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], struct.unpack('<BBII', buffer(data[0:10]))))
             data = data[10:]
             count = len(data) // 2
             samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.float32)
@@ -292,9 +296,9 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             self._process_audio_samples(seq, samples, rssi)
 
     def _process_wf(self, body):
-        x_bin_server = struct.unpack('<I', body[0:4])[0]
-        flags_x_zoom_server = struct.unpack('<I', body[4:8])[0]
-        seq = struct.unpack('<I', body[8:12])[0]
+        x_bin_server = struct.unpack('<I', buffer(body[0:4]))[0]
+        flags_x_zoom_server = struct.unpack('<I', buffer(body[4:8]))[0]
+        seq = struct.unpack('<I', buffer(body[8:12]))[0]
         data = body[12:]
         #print "W/F seq %d len %d" % (seq, len(data))
         if self._compression:
