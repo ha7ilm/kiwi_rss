@@ -12,7 +12,7 @@ def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     bits_per_sample = 16
     byte_rate       = samplerate * num_channels * bits_per_sample // 8
     block_align     = num_channels * bits_per_sample // 8
-    fp.write(struct.pack('<4sIHHIIHH', b'fmt ', 16, 1, num_channels, round(samplerate), byte_rate, block_align, bits_per_sample))
+    fp.write(struct.pack('<4sIHHIIHH', b'fmt ', 16, 1, num_channels, int(samplerate+0.5), byte_rate, block_align, bits_per_sample))
     if not is_kiwi_wav:
         fp.write(struct.pack('<4sI', b'data', filesize - 12 - 8 - 16 - 8))
 
