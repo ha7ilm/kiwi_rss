@@ -362,7 +362,7 @@ def main():
     except Exception as e:
         traceback.print_exc()
         run_event.clear()
-        join_threads(snd_recorders, wf_recorder)
+        join_threads(snd_recorders, wf_recorders)
         print("Exception: threads successfully closed")
 
 if __name__ == '__main__':
