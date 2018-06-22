@@ -7,9 +7,10 @@ import threading
 from kiwiclient import KiwiTooBusyError
 
 class KiwiWorker(threading.Thread):
-    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None, verbose=None):
-        super(KiwiWorker, self).__init__(group=group, target=target, name=name, verbose=verbose)
+    def __init__(self, group=None, target=None, name=None, args=(), kwargs=None):
+        super(KiwiWorker, self).__init__(group=group, target=target, name=name)
         self._recorder, self._options, self._run_event = args
+        self._event = threading.Event()
 
     def _do_run(self):
         return self._run_event.is_set()
@@ -18,15 +19,15 @@ class KiwiWorker(threading.Thread):
         for i in range(seconds):
             if not self._do_run():
                 break;
-            time.sleep(1)
+            self._event.wait(timeout=1)
 
     def run(self):
         while self._do_run():
             try:
                 self._recorder.connect(self._options.server_host, self._options.server_port)
-            except:
-                print "Failed to connect, sleeping and reconnecting"
-                self._sleep(15)
+            except Exception as e:
+                print("Failed to connect, sleeping and reconnecting error='%s'" %e)
+                self._event.wait(timeout=15)
                 continue
 
             try:
@@ -34,8 +35,8 @@ class KiwiWorker(threading.Thread):
                 while self._do_run():
                     self._recorder.run()
             except KiwiTooBusyError:
-                print "Server %s:%d too busy now" % (self._options.server_host, self._options.server_port)
-                self._sleep(15)
+                print("Server %s:%d too busy now" % (self._options.server_host, self._options.server_port))
+                self._event.wait(timeout=15)
                 continue
             except Exception as e:
                 traceback.print_exc()
