@@ -75,7 +75,9 @@ two:
 HOST_REAL = $(HOST)
 
 real:
-	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000 -T 3
+	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000
+tdoa:
+	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -m iq -L -5000 -H 5000 --kiwi-tdoa
 
 
 # IQ file with GPS timestamps

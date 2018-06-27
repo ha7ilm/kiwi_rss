@@ -47,6 +47,8 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
             self.set_agc(on=False, gain=self._options.agc_gain)
         else:
             self.set_agc(on=True)
+        if self._options.compression is False:
+            self._set_snd_comp(False)
         self.set_inactivity_timeout(0)
         self.set_name(self._options.user)
 
@@ -93,12 +95,15 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         self._write_samples(s, gps)
 
     def _get_output_filename(self):
-        station = '' if self._options.station is "None" else '_'+ self._options.station
+        station = '' if self._options.station is None else '_'+ self._options.station
         if self._options.filename != '':
-            return '%s%s.wav' % (self._options.filename, station)
+            filename = '%s%s.wav' % (self._options.filename, station)
         else:
             ts  = time.strftime('%Y%m%dT%H%M%SZ', self._start_ts)
-            return '%s_%d%s_%s.wav' % (ts, int(self._freq * 1000), station, self._options.modulation)
+            filename = '%s_%d%s_%s.wav' % (ts, int(self._freq * 1000), station, self._options.modulation)
+        if self._options.dir is not None:
+            filename = '%s/%s' % (self._options.dir, filename)
+        return filename
 
     def _update_wav_header(self):
         with open(self._get_output_filename(), 'r+b') as fp:
@@ -199,6 +204,7 @@ def options_cross_product(options):
     for i,s in enumerate(options.server_host):
         opt_single = copy.copy(options)
         opt_single.server_host = s;
+        opt_single.status = 0;
         for x in ['server_port', 'password', 'frequency', 'agc_gain', 'filename', 'station', 'user']:
             opt_single.__dict__[x] = _sel_entry(i, opt_single.__dict__[x])
         l.append(opt_single)
@@ -227,13 +233,13 @@ def main():
                       help='Timeout(sec) for sockets')
     parser.add_option('-s', '--server-host',
                       dest='server_host', type='string',
-                      default='localhost', help='server host (can be a comma-delimited list)',
+                      default='localhost', help='Server host (can be a comma-delimited list)',
                       action='callback',
                       callback_args=(str,),
                       callback=get_comma_separated_args)
     parser.add_option('-p', '--server-port',
                       dest='server_port', type='string',
-                      default=8073, help='server port, default 8073 (can be a comma delimited list)',
+                      default=8073, help='Server port, default 8073 (can be a comma delimited list)',
                       action='callback',
                       callback_args=(int,),
                       callback=get_comma_separated_args)
@@ -260,37 +266,51 @@ def main():
                       dest='modulation',
                       type='string', default='am',
                       help='Modulation; one of am, lsb, usb, cw, nbfm, iq')
+    parser.add_option('--ncomp', '--no_compression',
+                      dest='compression',
+                      default=True,
+                      action='store_false',
+                      help='Don\'t use audio compression')
     parser.add_option('--dt-sec',
                       dest='dt',
                       type='int', default=0,
-                      help='start a new file when mod(sec_of_day,dt) == 0')
+                      help='Start a new file when mod(sec_of_day,dt) == 0')
     parser.add_option('-L', '--lp-cutoff',
                       dest='lp_cut',
                       type='float', default=100,
-                      help='Low-pass cutoff frequency, in Hz.')
+                      help='Low-pass cutoff frequency, in Hz')
     parser.add_option('-H', '--hp-cutoff',
                       dest='hp_cut',
                       type='float', default=2600,
-                      help='Low-pass cutoff frequency, in Hz.')
+                      help='Low-pass cutoff frequency, in Hz')
     parser.add_option('--fn', '--filename',
                       dest='filename',
                       type='string', default='',
-                      help='use fixed filename instead of generated filenames (optional station ID(s) will apply)',
+                      help='Use fixed filename instead of generated filenames (optional station ID(s) will apply)',
                       action='callback',
                       callback_args=(str,),
                       callback=get_comma_separated_args)
     parser.add_option('--station',
                       dest='station',
-                      type='string', default="None",
+                      type='string', default=None,
                       help='Station ID to be appended (can be a comma-separated list)',
                       action='callback',
                       callback_args=(str,),
                       callback=get_comma_separated_args)
+    parser.add_option('-d', '--dir',
+                      dest='dir',
+                      type='string', default=None,
+                      help='Optional destination directory for files')
     parser.add_option('-w', '--kiwi-wav',
                       dest='is_kiwi_wav',
                       default=False,
                       action='store_true',
-                      help='wav file format including KIWI header (GPS time-stamps) only for IQ mode')
+                      help='Use wav file format including KIWI header (GPS time-stamps) only for IQ mode')
+    parser.add_option('--kiwi-tdoa',
+                      dest='is_kiwi_tdoa',
+                      default=False,
+                      action='store_true',
+                      help='Used when called by Kiwi TDoA extension')
     parser.add_option('--tlimit', '--time-limit',
                       dest='tlimit',
                       type='float', default=None,
@@ -322,7 +342,7 @@ def main():
                       help='Also process sound data when in waterfall mode')
 
     (options, unused_args) = parser.parse_args()
-
+    
     logging.basicConfig(level=logging.getLevelName(options.log_level.upper()))
 
     run_event = threading.Event()
@@ -345,13 +365,13 @@ def main():
             if i!=0 and options[i-1].server_host == options[i].server_host:
                 time.sleep(1)
             r.start()
-            print("started sound recorder %d" % i)
+            logging.info("started sound recorder %d" % i)
 
         for i,r in enumerate(wf_recorders):
             if i!=0 and options[i-1].server_host == options[i].server_host:
                 time.sleep(1)
             r.start()
-            print("started waterfall recorder %d" % i)
+            logging.info("started waterfall recorder %d" % i)
 
         while run_event.is_set():
             time.sleep(.1)
@@ -364,6 +384,10 @@ def main():
         run_event.clear()
         join_threads(snd_recorders, wf_recorders)
         print("Exception: threads successfully closed")
+
+    if gopt.is_kiwi_tdoa:
+      for i,opt in enumerate(options):
+          print("status=%d,%d" % (i, opt.status))
 
 if __name__ == '__main__':
     main()

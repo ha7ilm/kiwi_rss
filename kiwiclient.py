@@ -92,7 +92,7 @@ class KiwiBadPasswordError(KiwiError):
     pass
 
 class KiwiSDRStreamBase(object):
-    """KiwiSDR WebSocket stream client."""
+    """KiwiSDR WebSocket stream base client."""
 
     def __init__(self):
         self._socket = None
@@ -158,7 +158,7 @@ class KiwiSDRStreamBase(object):
 
 
 class KiwiSDRStream(KiwiSDRStreamBase):
-    """KiwiSDR WebSocket stream client: the SND stream."""
+    """KiwiSDR WebSocket stream client."""
 
     def __init__(self, *args, **kwargs):
         self._decoder = ImaAdpcmDecoder()
@@ -198,6 +198,10 @@ class KiwiSDRStream(KiwiSDRStreamBase):
 
     def _set_maxdb_mindb(self, maxdb, mindb):
         self._send_message('SET maxdb=%d mindb=%d' % (maxdb, mindb))
+
+    def _set_snd_comp(self, comp):
+        self._compression = comp;
+        self._send_message('SET compression=%d' % (1 if comp else 0))
 
     def _set_wf_comp(self, comp):
         self._compression = comp;
