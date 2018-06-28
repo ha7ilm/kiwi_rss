@@ -296,7 +296,11 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             cs.imag = samples[1:count:2]
             self._process_iq_samples(seq, cs, rssi, gps)
         else:
-            samples = self._decoder.decode(data)
+            if self._compression:
+                samples = self._decoder.decode(data)
+            else:
+                count = len(data) // 2
+                samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.int16)
             self._process_audio_samples(seq, samples, rssi)
 
     def _process_wf(self, body):
