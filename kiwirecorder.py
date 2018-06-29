@@ -53,8 +53,9 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         self.set_name(self._options.user)
 
     def _process_audio_samples(self, seq, samples, rssi):
-        sys.stdout.write('\rBlock: %08x, RSSI: %-04d' % (seq, rssi))
-        sys.stdout.flush()
+        if self._options.quiet is False:
+          sys.stdout.write('\rBlock: %08x, RSSI: %-04d' % (seq, rssi))
+          sys.stdout.flush()
         if self._options.thresh is not None:
             if self._nf_samples < len(self._nf_array) or self._squelch_on_seq is None:
                 self._nf_array[self._nf_index] = rssi
@@ -74,7 +75,8 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
             if rssi_green:
                 self._squelch_on_seq = seq
                 is_open = True
-            sys.stdout.write(' Median: %-04d Thr: %-04d %s' % (median_nf, rssi_thresh, ("s", "S")[is_open]))
+            if self._options.quiet is False:
+                sys.stdout.write(' Median: %-04d Thr: %-04d %s' % (median_nf, rssi_thresh, ("s", "S")[is_open]))
             if not is_open:
                 return
             if seq > self._squelch_on_seq + 45:
@@ -228,6 +230,11 @@ def main():
                       dest='log_level', default='warn',
                       choices=['debug', 'info', 'warn', 'error', 'critical'],
                       help='Log level: debug|info|warn|error|critical')
+    parser.add_option('-q', '--quiet',
+                      dest='quiet',
+                      default=False,
+                      action='store_true',
+                      help='Don\'t print progress messages')
     parser.add_option('-k', '--socket-timeout', '--socket_timeout',
                       dest='socket_timeout', type='int', default=10,
                       help='Timeout(sec) for sockets')
