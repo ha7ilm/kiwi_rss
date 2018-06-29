@@ -27,7 +27,7 @@ class KiwiWorker(threading.Thread):
                 self._recorder.connect(self._options.server_host, self._options.server_port)
             except Exception as e:
                 print("Failed to connect, sleeping and reconnecting error='%s'" %e)
-                if self._options.kiwi_tdoa is not None:
+                if self._options.is_kiwi_tdoa:
                     self._options.status = 1
                     break
                 self._event.wait(timeout=15)
@@ -39,7 +39,7 @@ class KiwiWorker(threading.Thread):
                     self._recorder.run()
             except KiwiTooBusyError:
                 print("Server %s:%d too busy now" % (self._options.server_host, self._options.server_port))
-                if self._options.kiwi_tdoa is not None:
+                if self._options.is_kiwi_tdoa:
                     self._options.status = 2
                     break
                 self._event.wait(timeout=15)
