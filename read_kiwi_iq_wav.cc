@@ -4,25 +4,44 @@
 #include <octave/oct.h>
 #include <octave/oct-map.h>
 
+#ifdef __GNUC__
+#  define _PACKED __attribute__((__packed__))
+#else
+#  define _PACKED
+#endif
+
+#ifndef __GNUC__
+#  pragma pack(push, 1)
+#endif
+
 class chunk_base {
 public:
+  chunk_base() {
+    static_assert(sizeof(chunk_base) == 8, "chunk_base has wrong packed size");
+  }
   std::string id() const { return std::string((char*)(_id), 4); }
   std::streampos size() const { return _size; }
 private:
   int8_t   _id[4];
   uint32_t _size;
-} __attribute__((packed));
+} _PACKED;
 
 class chunk_riff : public chunk_base {
 public:
+  chunk_riff() {
+    static_assert(sizeof(chunk_riff) == 8+4, "chunk_riff has wrong packed size");
+  }
   std::string format() const { return std::string((char*)(_format), 4); }
 
 private:
   int8_t _format[4];
-} __attribute__((packed));
+} _PACKED;
 
 class chunk_fmt : public chunk_base {
 public:
+  chunk_fmt() {
+    static_assert(sizeof(chunk_fmt) == 8+16, "chunk_fmt has wrong packed size");
+  }
   uint16_t format()       const { return _format; }
   uint16_t num_channels() const { return _num_channels; }
   uint32_t sample_rate()  const { return _sample_rate; }
@@ -36,17 +55,26 @@ protected:
   uint32_t _byte_rate;
   uint16_t _block_align;
   uint16_t _dummy;
-} __attribute__((packed));
+} _PACKED;
 
 class chunk_kiwi : public chunk_base {
 public:
+  chunk_kiwi() {
+    static_assert(sizeof(chunk_kiwi) == 8+10, "chunk_kiwi has wrong packed size");
+  }
   uint8_t  last() const { return _last; }
   uint32_t gpssec() const { return _gpssec; }
   uint32_t gpsnsec() const { return _gpsnsec; }
 private:
   uint8_t  _last, _dummy;
   uint32_t _gpssec, _gpsnsec;
-} __attribute__((packed));
+} _PACKED;
+
+#ifndef __GNUC__
+#  pragma pack(pop)
+#endif
+
+#undef _PACKED
 
 DEFUN_DLD (read_kiwi_iq_wav, args, nargout, "[d,sample_rate]=read_kiwi_wav(\"<wav file name\");")
 {
@@ -57,6 +85,8 @@ DEFUN_DLD (read_kiwi_iq_wav, args, nargout, "[d,sample_rate]=read_kiwi_wav(\"<wa
     return retval;
 
   std::ifstream file(filename.c_str(), std::ios::binary);
+  if (!file)
+    error("file '%s' does not exist", filename.c_str());
 
   octave_value_list cell_z, cell_last, cell_gpssec, cell_gpsnsec;
 
@@ -65,16 +95,17 @@ DEFUN_DLD (read_kiwi_iq_wav, args, nargout, "[d,sample_rate]=read_kiwi_wav(\"<wa
 
   int data_counter=0;
   while (file) {
-    std::streampos pos = file.tellg();
+    const std::streampos pos = file.tellg();
     file.read((char*)(&c), sizeof(c));
-    if (!file)
+    if (!file) {
+      // end of file
       break;
-
+    }
     if (c.id() == "RIFF") {
       chunk_riff cr;
       file.seekg(pos);
       file.read((char*)(&cr), sizeof(cr));
-      if (cr.format() != "WAVE") {
+      if (!file || cr.format() != "WAVE") {
         error("'WAVE' chunk expected");
         break;
       }
@@ -86,7 +117,8 @@ DEFUN_DLD (read_kiwi_iq_wav, args, nargout, "[d,sample_rate]=read_kiwi_wav(\"<wa
     } else if (c.id() == "fmt ") {
       file.seekg(pos);
       file.read((char*)(&fmt), sizeof(fmt));
-      if (fmt.format() != 1 ||
+      if (!file ||
+          fmt.format() != 1 ||
           fmt.num_channels() != 2) {
         error("unsupported WAVE format");
         break;
@@ -95,24 +127,27 @@ DEFUN_DLD (read_kiwi_iq_wav, args, nargout, "[d,sample_rate]=read_kiwi_wav(\"<wa
     } else if (c.id() == "data") {
       const int n = c.size()/4;
       ComplexNDArray a(dim_vector(n, 1));
-      int16_t i=0, q=0;
-      for (int j=0; j<n && file; ++j) {
+      int16_t i=0, j=0, q=0;
+      for (; j<n && file; ++j) {
         file.read((char*)(&i), sizeof(i));
         file.read((char*)(&q), sizeof(q));
         a(j) = std::complex<double>(i/32768., q/32768.);
       }
+      if (j != n)
+        error("incomplete 'data' chunk");
       cell_z(data_counter++) = a;
     } else if (c.id() == "kiwi") {
       file.seekg(pos);
       chunk_kiwi kiwi;
       file.read((char*)(&kiwi), sizeof(kiwi));
+      if (!file)
+        error("incomplete 'kiwi' chunk");
       cell_last(data_counter)    = kiwi.last();
       cell_gpssec(data_counter)  = kiwi.gpssec();
       cell_gpsnsec(data_counter) = kiwi.gpsnsec();
     } else {
       octave_stdout << "skipping unknown chunk " << c.id() << std::endl;
-      pos = file.tellg();
-      file.seekg(pos + c.size());
+      file.seekg(file.tellg() + c.size());
     }
   }
   octave_map map;
