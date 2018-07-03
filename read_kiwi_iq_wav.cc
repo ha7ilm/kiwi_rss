@@ -4,13 +4,14 @@
 #include <octave/oct.h>
 #include <octave/oct-map.h>
 
-#ifdef __GNUC__
+#if defined(__GNUC__) && __GNUC__ < 4
 #  define _PACKED __attribute__((__packed__))
 #else
 #  define _PACKED
+#  define _USE_PRAGMA_PACK
 #endif
 
-#ifndef __GNUC__
+#ifdef _USE_PRAGMA_PACK
 #  pragma pack(push, 1)
 #endif
 
@@ -70,8 +71,9 @@ private:
   uint32_t _gpssec, _gpsnsec;
 } _PACKED;
 
-#ifndef __GNUC__
+#ifdef _USE_PRAGMA_PACK
 #  pragma pack(pop)
+#  undef _USE_PRAGMA_PACK
 #endif
 
 #undef _PACKED
