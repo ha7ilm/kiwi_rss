@@ -4,7 +4,7 @@
 #include <octave/oct.h>
 #include <octave/oct-map.h>
 
-#if defined(__GNUC__) && __GNUC__ < 4
+#if defined(__GNUC__) && not defined(__MINGW32__)
 #  define _PACKED __attribute__((__packed__))
 #else
 #  define _PACKED
@@ -17,7 +17,9 @@
 
 class chunk_base {
 public:
-  chunk_base() {
+  chunk_base()
+    : _id()
+    , _size() {
     static_assert(sizeof(chunk_base) == 8, "chunk_base has wrong packed size");
   }
   std::string id() const { return std::string((char*)(_id), 4); }
@@ -29,7 +31,8 @@ private:
 
 class chunk_riff : public chunk_base {
 public:
-  chunk_riff() {
+  chunk_riff()
+    : _format() {
     static_assert(sizeof(chunk_riff) == 8+4, "chunk_riff has wrong packed size");
   }
   std::string format() const { return std::string((char*)(_format), 4); }
@@ -40,7 +43,13 @@ private:
 
 class chunk_fmt : public chunk_base {
 public:
-  chunk_fmt() {
+  chunk_fmt()
+    : _format()
+    , _num_channels()
+    , _sample_rate()
+    , _byte_rate()
+    , _block_align()
+    , _dummy() {
     static_assert(sizeof(chunk_fmt) == 8+16, "chunk_fmt has wrong packed size");
   }
   uint16_t format()       const { return _format; }
@@ -60,7 +69,11 @@ protected:
 
 class chunk_kiwi : public chunk_base {
 public:
-  chunk_kiwi() {
+  chunk_kiwi()
+    : _last()
+    , _dummy()
+    , _gpssec()
+    , _gpsnsec() {
     static_assert(sizeof(chunk_kiwi) == 8+10, "chunk_kiwi has wrong packed size");
   }
   uint8_t  last() const { return _last; }
@@ -128,12 +141,12 @@ DEFUN_DLD (read_kiwi_iq_wav, args, nargout, "[d,sample_rate]=read_kiwi_wav(\"<wa
       retval(1) = fmt.sample_rate();
     } else if (c.id() == "data") {
       const int n = c.size()/4;
-      ComplexNDArray a(dim_vector(n, 1));
+      FloatComplexNDArray a(dim_vector(n, 1));
       int16_t i=0, j=0, q=0;
       for (; j<n && file; ++j) {
         file.read((char*)(&i), sizeof(i));
         file.read((char*)(&q), sizeof(q));
-        a(j) = std::complex<double>(i/32768., q/32768.);
+        a(j) = std::complex<float>(i/32768.0f, q/32768.0f);
       }
       if (j != n)
         error("incomplete 'data' chunk");
@@ -148,7 +161,7 @@ DEFUN_DLD (read_kiwi_iq_wav, args, nargout, "[d,sample_rate]=read_kiwi_wav(\"<wa
       cell_gpssec(data_counter)  = kiwi.gpssec();
       cell_gpsnsec(data_counter) = kiwi.gpsnsec();
     } else {
-      octave_stdout << "skipping unknown chunk " << c.id() << std::endl;
+      octave_stdout << "skipping unknown chunk '" << c.id() << "'" << std::endl;
       file.seekg(file.tellg() + c.size());
     }
   }
@@ -158,6 +171,8 @@ DEFUN_DLD (read_kiwi_iq_wav, args, nargout, "[d,sample_rate]=read_kiwi_wav(\"<wa
     map.setfield("gpslast", cell_last);
     map.setfield("gpssec",  cell_gpssec);
     map.setfield("gpsnsec", cell_gpsnsec);
+  } else {
+    error("number of GNSS timestamps does not match number of IQ samples");
   }
   retval(0) = map;
 
