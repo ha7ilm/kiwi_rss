@@ -73,11 +73,12 @@ two:
 # Should playback using standard .wav file player
 
 HOST_REAL = $(HOST)
+HOST_TDOA = $(HOST)
 
 real:
 	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000
 tdoa:
-	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -m iq -L -5000 -H 5000 --kiwi-tdoa
+	python -u kiwirecorder.py -s $(HOST_TDOA) -f 1440 -m iq -L -5000 -H 5000 --kiwi-wav --kiwi-tdoa --tlimit=10
 
 
 # IQ file with GPS timestamps

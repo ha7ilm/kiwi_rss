@@ -95,6 +95,11 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         for x in [[y.real, y.imag] for y in samples]:
             s.extend(map(int, x))
         self._write_samples(s, gps)
+        
+        # no GPS or no recent GPS solution
+        last = gps['last_gps_solution']
+        if last == 255 or last == 254:
+            self._options.status = 3
 
     def _get_output_filename(self):
         station = '' if self._options.station is None else '_'+ self._options.station
@@ -126,7 +131,10 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
             # Write a static WAV header
             with open(self._get_output_filename(), 'wb') as fp:
                 _write_wav_header(fp, 100, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
-            print("\nStarted a new file: %s" % self._get_output_filename())
+            if self._options.is_kiwi_tdoa:
+                print("file=%d %s" % (self._options.idx, self._get_output_filename()))
+            else:
+                print("\nStarted a new file: %s" % self._get_output_filename())
         with open(self._get_output_filename(), 'ab') as fp:
             if self._options.is_kiwi_wav:
                 gps = args[0]
@@ -139,11 +147,20 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         self._update_wav_header()
 
     def _on_gnss_position(self, pos):
-        if os.path.isdir('gnss_pos'):
-            pos_filename = 'gnss_pos/'+self._options.station+'.txt'
+        pos_record = False
+        if self._options.dir is not None:
+            pos_dir = self._options.dir
+            pos_record = True
+        else:
+            if os.path.isdir('gnss_pos'):
+                pos_dir = 'gnss_pos'
+                pos_record = True
+        if pos_record:
+            pos_filename = pos_dir +'/'+ self._options.station+'.txt'
             with open(pos_filename, 'w') as f:
+                station = self._options.station.replace('-', '_')   # since Octave var name
                 f.write("d.%s = struct('coord', [%f,%f], 'host', '%s', 'port', %d);\n"
-                        % (self._options.station,
+                        % (station,
                            pos[0], pos[1],
                            self._options.server_host,
                            self._options.server_port))
@@ -360,7 +377,9 @@ def main():
 
     snd_recorders = []
     if not gopt.waterfall or (gopt.waterfall and gopt.sound):
-        snd_recorders = [KiwiWorker(args=(KiwiSoundRecorder(opt),opt,run_event)) for i,opt in enumerate(options)]
+        for i,opt in enumerate(options):
+            opt.idx = i
+            snd_recorders.append(KiwiWorker(args=(KiwiSoundRecorder(opt),opt,run_event)))
 
     wf_recorders = []
     if gopt.waterfall:
