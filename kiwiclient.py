@@ -214,7 +214,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         if name == 'load_cfg':
             logging.info("load_cfg: (cfg info not printed)")
             d = json.loads(urllib.unquote(value.decode()))
-            self._gps_pos = [float(x) for x in urllib.unquote(d['rx_gps'])[1:-1].split(",")]
+            self._gps_pos = [float(x) for x in urllib.unquote(d['rx_gps'])[1:-1].split(",")[0:2]]
             print("GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1]))
             self._on_gnss_position(self._gps_pos)
         else:
