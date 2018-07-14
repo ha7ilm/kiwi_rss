@@ -5,6 +5,7 @@ import traceback
 import threading
 
 from kiwiclient import KiwiTooBusyError
+from kiwiclient import KiwiTimeLimitError
 
 class KiwiWorker(threading.Thread):
     def __init__(self, group=None, target=None, name=None, args=(), kwargs=None):
@@ -44,7 +45,11 @@ class KiwiWorker(threading.Thread):
                     break
                 self._event.wait(timeout=15)
                 continue
+            except KiwiTimeLimitError:
+                break
             except Exception as e:
+                if self._options.is_kiwi_tdoa:
+                    self._options.status = 1
                 traceback.print_exc()
                 break
 

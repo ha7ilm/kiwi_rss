@@ -90,6 +90,8 @@ class KiwiDownError(KiwiError):
     pass
 class KiwiBadPasswordError(KiwiError):
     pass
+class KiwiTimeLimitError(KiwiError):
+    pass
 
 class KiwiSDRStreamBase(object):
     """KiwiSDR WebSocket stream base client."""
@@ -221,11 +223,11 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             logging.debug("recv MSG (%s) %s: %s", self._stream_name, name, value)
         # Handle error conditions
         if name == 'too_busy':
-            raise KiwiTooBusyError('all %s client slots taken' % value)
+            raise KiwiTooBusyError('%s: all %s client slots taken' % (self._options.server_host, value))
         if name == 'badp' and value == '1':
-            raise KiwiBadPasswordError('bad password')
+            raise KiwiBadPasswordError('%s: bad password' % self._options.server_host)
         if name == 'down':
-            raise KiwiDownError('server is down atm')
+            raise KiwiDownError('%s: server is down atm' % self._options.server_host)
         # Handle data items
         if name == 'audio_rate':
             self._set_ar_ok(int(value), 44100)
@@ -360,6 +362,6 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         self._process_ws_message(received)
         tlimit = self._options.tlimit
         if tlimit != None and self._start_time != None and time.time() - self._start_time > tlimit:
-            raise KiwiError('time limit reached')
+            raise KiwiTimeLimitError('time limit reached')
 
 # EOF
