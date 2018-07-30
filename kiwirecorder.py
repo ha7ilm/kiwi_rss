@@ -36,6 +36,7 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         self._last_gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], [0,0,0,0]))
 
     def _setup_rx_params(self):
+        self.set_name(self._options.user)
         mod    = self._options.modulation
         lp_cut = self._options.lp_cut
         hp_cut = self._options.hp_cut
@@ -50,7 +51,6 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         if self._options.compression is False:
             self._set_snd_comp(False)
         self.set_inactivity_timeout(0)
-        self.set_name(self._options.user)
 
     def _process_audio_samples(self, seq, samples, rssi):
         if self._options.quiet is False:
