@@ -74,11 +74,15 @@ two:
 
 HOST_REAL = $(HOST)
 HOST_TDOA = $(HOST)
+H = $(HOST)
 
 real:
 	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000
 tdoa:
-	python -u kiwirecorder.py -s $(HOST_TDOA) -f 1440 -m iq -L -5000 -H 5000 --kiwi-wav --kiwi-tdoa --tlimit=10
+	python -u kiwirecorder.py -s $(HOST_TDOA) -f 1440 -m iq -L -5000 -H 5000 --kiwi-wav --kiwi-tdoa --tlimit=10 -u krec-TDoA
+rx8:
+#	python kiwirecorder.py -s $H,$H,$H,$H,$H,$H,$H,$H -f 1440 -L -5000 -H 5000 --launch-delay=15 --socket-timeout=120 -u krec-RX8
+	python kiwirecorder.py -s $H,$H,$H,$H,$H,$H,$H,$H -f 1440 -L -5000 -H 5000 -u krec-RX8
 
 
 # IQ file with GPS timestamps
@@ -106,7 +110,7 @@ iq:
 HOST_WF = $(HOST)
 
 wf:
-	python kiwirecorder.py --wf -s $(HOST_WF) -f 1440 --log_level info
+	python kiwirecorder.py --wf -s $(HOST_WF) -f 1440 --log_level info -u krec-WF
 
 micro:
 	python microkiwi_waterfall.py -s $(HOST_WF) -z 0 -o 0

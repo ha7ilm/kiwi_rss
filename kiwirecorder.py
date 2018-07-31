@@ -279,6 +279,10 @@ def main():
                       action='callback',
                       callback_args=(str,),
                       callback=get_comma_separated_args)
+    parser.add_option('--launch-delay', '--launch_delay',
+                      dest='launch_delay',
+                      type='int', default=1,
+                      help='Delay (secs) in launching multiple connections')
     parser.add_option('-f', '--freq',
                       dest='frequency',
                       type='string', default=1000,
@@ -389,13 +393,13 @@ def main():
     try:
         for i,r in enumerate(snd_recorders):
             if i!=0 and options[i-1].server_host == options[i].server_host:
-                time.sleep(1)
+                time.sleep(opt.launch_delay)
             r.start()
             logging.info("started sound recorder %d" % i)
 
         for i,r in enumerate(wf_recorders):
             if i!=0 and options[i-1].server_host == options[i].server_host:
-                time.sleep(1)
+                time.sleep(opt.launch_delay)
             r.start()
             logging.info("started waterfall recorder %d" % i)
 
