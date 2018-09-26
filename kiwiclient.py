@@ -5,7 +5,17 @@ import logging
 import socket
 import struct
 import time
+import numpy as np
+try:
+    import urllib.parse as urllib
+except ImportError:
+    import urllib
 
+import sys
+if sys.version_info > (3,):
+    buffer = memoryview
+
+import json
 import wsclient
 
 #
@@ -80,9 +90,11 @@ class KiwiDownError(KiwiError):
     pass
 class KiwiBadPasswordError(KiwiError):
     pass
+class KiwiTimeLimitError(KiwiError):
+    pass
 
 class KiwiSDRStreamBase(object):
-    """KiwiSDR WebSocket stream client."""
+    """KiwiSDR WebSocket stream base client."""
 
     def __init__(self):
         self._socket = None
@@ -98,18 +110,16 @@ class KiwiSDRStreamBase(object):
         pass
 
     def _process_message(self, tag, body):
-        print 'Unknown message tag: %s' % (tag)
-        print repr(body)
+        print('Unknown message tag: %s' % tag)
+        print(repr(body))
 
     def _prepare_stream(self, host, port, which):
         import mod_pywebsocket.common
         from mod_pywebsocket.stream import Stream
         from mod_pywebsocket.stream import StreamOptions
 
-        self._socket = socket.socket()
-        self._socket.settimeout(self._options.socket_timeout)
-        self._socket.connect((host, port))
-
+        self._stream_name = which;
+        self._socket = socket.create_connection(address=(host, port), timeout=self._options.socket_timeout)
         uri = '/%d/%s' % (int(time.time()), which)
         handshake = wsclient.ClientHandshakeProcessor(self._socket, host, port)
         handshake.handshake(uri)
@@ -124,7 +134,9 @@ class KiwiSDRStreamBase(object):
         self._stream = Stream(request, stream_option)
 
     def _send_message(self, msg):
-        self._stream.send_message(msg)
+        if msg != 'SET keepalive':
+            logging.debug("send SET (%s) %s", self._stream_name, msg)
+        self._stream.send_message(str(msg))
 
     def _set_auth(self, client_type, password=''):
         self._send_message('SET auth t=%s p=%s' % (client_type, password))
@@ -142,22 +154,25 @@ class KiwiSDRStreamBase(object):
         self._send_message('SET keepalive')
 
     def _process_ws_message(self, message):
-        tag, body = message.split(' ', 1)
+        tag = message[0:3].decode()
+        body = message[4:]
         self._process_message(tag, body)
 
 
-class KiwiSDRSoundStream(KiwiSDRStreamBase):
-    """KiwiSDR WebSocket stream client: the SND stream."""
+class KiwiSDRStream(KiwiSDRStreamBase):
+    """KiwiSDR WebSocket stream client."""
 
-    def __init__(self):
+    def __init__(self, *args, **kwargs):
         self._decoder = ImaAdpcmDecoder()
         self._sample_rate = None
         self._version_major = None
         self._version_minor = None
         self._modulation = None
+        self._compression = True
+        self._gps_pos = [0,0]
 
     def connect(self, host, port):
-        self._prepare_stream(host, port, 'SND')
+        self._prepare_stream(host, port, 'W/F' if self._isWF else 'SND')
 
     def set_mod(self, mod, lc, hc, freq):
         mod = mod.lower()
@@ -171,7 +186,7 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
         self._send_message('SET squelch=%d max=%d' % (sq, thresh))
 
     def set_autonotch(self, val):
-        self._send_message('SET autonotch=%d' % (val))
+        self._send_message('SET lms_autonotch=%d' % (val))
 
     def _set_ar_ok(self, ar_in, ar_out):
         self._send_message('SET AR OK in=%d out=%d' % (ar_in, ar_out))
@@ -180,15 +195,39 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
         self._send_message('SET genattn=%d' % (attn))
         self._send_message('SET gen=%d mix=%d' % (freq, -1))
 
+    def _set_zoom_start(self, zoom, start):
+        self._send_message('SET zoom=%d start=%f' % (zoom, start))
+
+    def _set_maxdb_mindb(self, maxdb, mindb):
+        self._send_message('SET maxdb=%d mindb=%d' % (maxdb, mindb))
+
+    def _set_snd_comp(self, comp):
+        self._compression = comp;
+        self._send_message('SET compression=%d' % (1 if comp else 0))
+
+    def _set_wf_comp(self, comp):
+        self._compression = comp;
+        self._send_message('SET wf_comp=%d' % (1 if comp else 0))
+
+    def _set_wf_speed(self, wf_speed):
+        self._send_message('SET wf_speed=%d' % wf_speed)
+
     def _process_msg_param(self, name, value):
-        print "%s: %s" % (name, value)
+        if name == 'load_cfg':
+            logging.info("load_cfg: (cfg info not printed)")
+            d = json.loads(urllib.unquote(value.decode()))
+            self._gps_pos = [float(x) for x in urllib.unquote(d['rx_gps'])[1:-1].split(",")[0:2]]
+            print("GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1]))
+            self._on_gnss_position(self._gps_pos)
+        else:
+            logging.debug("recv MSG (%s) %s: %s", self._stream_name, name, value)
         # Handle error conditions
         if name == 'too_busy':
-            raise KiwiTooBusyError('all %s client slots taken' % value)
+            raise KiwiTooBusyError('%s: all %s client slots taken' % (self._options.server_host, value))
         if name == 'badp' and value == '1':
-            raise KiwiBadPasswordError()
+            raise KiwiBadPasswordError('%s: bad password' % self._options.server_host)
         if name == 'down':
-            raise KiwiDownError('server is down atm')
+            raise KiwiDownError('%s: server is down atm' % self._options.server_host)
         # Handle data items
         if name == 'audio_rate':
             self._set_ar_ok(int(value), 44100)
@@ -199,6 +238,11 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
             self.set_squelch(0, 0)
             self.set_autonotch(0)
             self._set_gen(0, 0)
+            # Required to get rolling
+            self._setup_rx_params()
+            # Also send a keepalive
+            self._set_keepalive()
+        elif name == 'wf_setup':
             # Required to get rolling
             self._setup_rx_params()
             # Also send a keepalive
@@ -216,33 +260,70 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
         if tag == 'MSG':
             self._process_msg(body)
         elif tag == 'SND':
-            self._process_aud(body)
+            try:
+                self._process_aud(body)
+            except Exception as e:
+                print(e)
+            # Ensure we don't get kicked due to timeouts
+            self._set_keepalive()
+        elif tag == 'W/F':
+            self._process_wf(body)
             # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         else:
+            print("unknown tag %s" % tag)
             pass
 
     def _process_msg(self, body):
-        for pair in body.split(' '):
-            name, value = pair.split('=', 1)
-            self._process_msg_param(name, value)
+        for pair in body.split(b' '):
+            if b'=' in pair:
+                name, value = pair.split(b'=', 1)
+                self._process_msg_param(name.decode(), value)
+            else:
+                name = pair
+                self._process_msg_param(name.decode(), None)
 
     def _process_aud(self, body):
-        seq = struct.unpack('<I', body[0:4])[0]
-        smeter = struct.unpack('>H', body[4:6])[0]
+        seq = struct.unpack('<I', buffer(body[0:4]))[0]
+        smeter = struct.unpack('>H', buffer(body[4:6]))[0]
         data = body[6:]
         rssi = (smeter & 0x0FFF) // 10 - 127
         if self._modulation == 'iq':
-            gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], struct.unpack('<BBII', data[0:10])))
-            ## gps['gpsnsec'] = struct.unpack('<I', data[6:10])[0]
-            data  = data[10:]
+            gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], struct.unpack('<BBII', buffer(data[0:10]))))
+            data = data[10:]
             count = len(data) // 2
-            data  = struct.unpack('>%dh' % count, data)
-            samples = [ complex(data[i+0], data[i+1]) for i in xrange(0, count, 2) ]
-            self._process_iq_samples(seq, samples, rssi, gps)
+            samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.float32)
+            cs      = np.ndarray(count//2, dtype=np.complex64)
+            cs.real = samples[0:count:2]
+            cs.imag = samples[1:count:2]
+            self._process_iq_samples(seq, cs, rssi, gps)
         else:
-            samples = self._decoder.decode(data)
+            if self._compression:
+                samples = self._decoder.decode(data)
+            else:
+                count = len(data) // 2
+                samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.int16)
             self._process_audio_samples(seq, samples, rssi)
+
+    def _process_wf(self, body):
+        x_bin_server = struct.unpack('<I', buffer(body[0:4]))[0]
+        flags_x_zoom_server = struct.unpack('<I', buffer(body[4:8]))[0]
+        seq = struct.unpack('<I', buffer(body[8:12]))[0]
+        data = body[12:]
+        #print "W/F seq %d len %d" % (seq, len(data))
+        if self._compression:
+            self._decoder.__init__()   # reset decoder each sample
+            samples = self._decoder.decode(data)
+            samples = samples[:len(samples)-10]   # remove decompression tail
+        else:
+            fcn = ord if isinstance(data, str) else lambda x : x
+            samples = array.array('h')
+            for b in map(fcn, data):
+                samples.append(b)
+        self._process_waterfall_samples(seq, samples)
+
+    def _on_gnss_position(self, position):
+        pass
 
     def _on_sample_rate_change(self):
         pass
@@ -253,25 +334,34 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
     def _process_iq_samples(self, seq, samples, rssi, gps):
         pass
 
+    def _process_waterfall_samples(self, seq, samples):
+        pass
+
     def _setup_rx_params(self):
-        self._set_mod('am', 100, 2800, 4625.0)
-        self._set_agc(True)
+        if self._isWF:
+            self._set_zoom_start(0, 0)
+            self._set_maxdb_mindb(-10, -110)
+            self._set_wf_speed(1)
+        else:
+            self._set_mod('am', 100, 2800, 4625.0)
+            self._set_agc(True)
+
+    def open(self):
+        self._set_auth('kiwi', self._options.password)
+
+    def close(self):
+        try:
+            self._stream.close_connection()
+            self._socket.close()
+        except Exception as e:
+            print("exception: %s" % e)
 
     def run(self):
         """Run the client."""
-
-        try:
-            self._set_auth('kiwi', '')
-            # Loop forever
-            while True:
-                try:
-                    received = self._stream.receive_message()
-                    self._process_ws_message(received)
-                except KeyboardInterrupt:
-                    break
-            self._stream.close_connection()
-        finally:
-            self._socket.close()
-
+        received = self._stream.receive_message()
+        self._process_ws_message(received)
+        tlimit = self._options.tlimit
+        if tlimit != None and self._start_time != None and time.time() - self._start_time > tlimit:
+            raise KiwiTimeLimitError('time limit reached')
 
 # EOF

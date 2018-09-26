@@ -42,6 +42,10 @@ import os
 import struct
 import time
 
+import sys
+if sys.version_info > (3,):
+    buffer = memoryview
+
 from mod_pywebsocket import common
 from mod_pywebsocket import util
 from mod_pywebsocket._stream_base import BadOperationException
@@ -90,11 +94,11 @@ def create_length_header(length, mask):
     if length < 0:
         raise ValueError('length must be non negative integer')
     elif length <= 125:
-        return chr(mask_bit | length)
+        return struct.pack('B', mask_bit | length)
     elif length < (1 << 16):
-        return chr(mask_bit | 126) + struct.pack('!H', length)
+        return struct.pack('B', mask_bit | 126) + struct.pack('!H', length)
     elif length < (1 << 63):
-        return chr(mask_bit | 127) + struct.pack('!Q', length)
+        return struct.pack('B', mask_bit | 127) + struct.pack('!Q', length)
     else:
         raise ValueError('Payload is too big for one frame')
 
@@ -115,12 +119,12 @@ def create_header(opcode, payload_length, fin, rsv1, rsv2, rsv3, mask):
     if (fin | rsv1 | rsv2 | rsv3) & ~1:
         raise ValueError('FIN bit and Reserved bit parameter must be 0 or 1')
 
-    header = ''
+    header = bytearray()
 
     first_byte = ((fin << 7)
                   | (rsv1 << 6) | (rsv2 << 5) | (rsv3 << 4)
                   | opcode)
-    header += chr(first_byte)
+    header += struct.pack('B', first_byte)
     header += create_length_header(payload_length, mask)
 
     return header
@@ -132,7 +136,6 @@ def _build_frame(header, body, mask):
 
     masking_nonce = os.urandom(4)
     masker = util.RepeatedXorMasker(masking_nonce)
-
     return header + masking_nonce + masker.mask(body)
 
 
@@ -183,22 +186,25 @@ def parse_frame(receive_bytes, logger=None,
         ConnectionTerminatedException: when receive_bytes raises it.
         InvalidFrameException: when the frame contains invalid data.
     """
-
     if not logger:
         logger = logging.getLogger()
 
     logger.log(common.LOGLEVEL_FINE, 'Receive the first 2 octets of a frame')
 
     received = receive_bytes(2)
+    if type(received[0]) is int:
+        received = [x for x in received]
+    else:
+        received = map(ord, received);
 
-    first_byte = ord(received[0])
+    first_byte = (received[0])
     fin = (first_byte >> 7) & 1
     rsv1 = (first_byte >> 6) & 1
     rsv2 = (first_byte >> 5) & 1
     rsv3 = (first_byte >> 4) & 1
     opcode = first_byte & 0xf
 
-    second_byte = ord(received[1])
+    second_byte = (received[1])
     mask = (second_byte >> 7) & 1
     payload_length = second_byte & 0x7f
 
@@ -223,7 +229,7 @@ def parse_frame(receive_bytes, logger=None,
 
         extended_payload_length = receive_bytes(8)
         payload_length = struct.unpack(
-            '!Q', extended_payload_length)[0]
+            '!Q', buffer(extended_payload_length))[0]
         if payload_length > 0x7FFFFFFFFFFFFFFF:
             raise InvalidFrameException(
                 'Extended payload length >= 2^63')
@@ -239,7 +245,7 @@ def parse_frame(receive_bytes, logger=None,
 
         extended_payload_length = receive_bytes(2)
         payload_length = struct.unpack(
-            '!H', extended_payload_length)[0]
+            '!H', buffer(extended_payload_length))[0]
         if ws_version >= 13 and payload_length < 126:
             valid_length_encoding = False
             length_encoding_bytes = 2
@@ -538,7 +544,7 @@ class Stream(StreamBase):
                 # at least one frame is sent.
                 if len(message) <= bytes_written:
                     break
-        except ValueError, e:
+        except ValueError as e:
             raise BadOperationException(e)
 
     def _get_message_from_frame(self, frame):
@@ -628,7 +634,7 @@ class Stream(StreamBase):
                 'status code must be 2 octet')
         elif len(message) >= 2:
             self._request.ws_close_code = struct.unpack(
-                '!H', message[0:2])[0]
+                '!H', buffer(message[0:2]))[0]
             self._request.ws_close_reason = message[2:].decode(
                 'utf-8', 'replace')
             self._logger.debug(
@@ -677,7 +683,7 @@ class Stream(StreamBase):
             if handler:
                 handler(self._request, message)
                 return
-        except AttributeError, e:
+        except AttributeError as e:
             pass
         self._send_pong(message)
 
@@ -704,7 +710,7 @@ class Stream(StreamBase):
                     break
                 else:
                     inflight_pings.append(expected_body)
-            except IndexError, e:
+            except IndexError as e:
                 # The received pong was unsolicited pong. Keep the
                 # ping queue as is.
                 self._ping_queue = inflight_pings
@@ -715,7 +721,7 @@ class Stream(StreamBase):
             handler = self._request.on_pong_handler
             if handler:
                 handler(self._request, message)
-        except AttributeError, e:
+        except AttributeError as e:
             pass
 
     def receive_message(self):
@@ -780,7 +786,7 @@ class Stream(StreamBase):
                 # CHARACTER.
                 try:
                     return message.decode('utf-8')
-                except UnicodeDecodeError, e:
+                except UnicodeDecodeError as e:
                     raise InvalidUTF8Exception(e)
             elif self._original_opcode == common.OPCODE_BINARY:
                 return message

@@ -32,9 +32,10 @@
 in HTTP RFC http://www.ietf.org/rfc/rfc2616.txt.
 """
 
-
-import urlparse
-
+try:
+    from urllib.parse import urlparse
+except ImportError:
+    import urlparse
 
 _SEPARATORS = '()<>@,;:\\"/[]?={} \t'
 
@@ -230,7 +231,7 @@ def parse_uri(uri):
     port = None
     try:
         port = parsed.port
-    except ValueError, e:
+    except ValueError as e:
         # port property cause ValueError on invalid null port description like
         # 'ws://host:/path'.
         return None, None, None
@@ -252,12 +253,13 @@ def parse_uri(uri):
     return parsed.hostname, port, path
 
 
-try:
-    urlparse.uses_netloc.index('ws')
-except ValueError, e:
-    # urlparse in Python2.5.1 doesn't have 'ws' and 'wss' entries.
-    urlparse.uses_netloc.append('ws')
-    urlparse.uses_netloc.append('wss')
+#try:
+#    urlparse.uses_netloc.index('ws')
+#    urlparse.uses_netloc.index('ws')
+#except ValueError as e:
+#    # urlparse in Python2.5.1 doesn't have 'ws' and 'wss' entries.
+#    urlparse.uses_netloc.append('ws')
+#    urlparse.uses_netloc.append('wss')
 
 
 # vi:sts=4 sw=4 et

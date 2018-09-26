@@ -35,7 +35,7 @@ class ClientHandshakeError(Exception):
 
 
 def _build_method_line(resource):
-    return 'GET %s HTTP/1.1\r\n' % resource
+    return ('GET %s HTTP/1.1\r\n' % resource).encode()
 
 
 def _origin_header(header, origin):
@@ -73,7 +73,7 @@ def _receive_bytes(socket, length):
                 (length, length - remaining))
         bytes.append(received_bytes)
         remaining -= len(received_bytes)
-    return ''.join(bytes)
+    return bytearray().join(bytes).decode()
 
 
 def _get_mandatory_header(fields, name):
@@ -281,9 +281,8 @@ class ClientHandshakeProcessor(ClientHandshakeBase):
         original_key = os.urandom(16)
         self._key = base64.b64encode(original_key)
         self._logger.debug('%s: %r (%s)', common.SEC_WEBSOCKET_KEY_HEADER, self._key, util.hexify(original_key))
-        fields.append('%s: %s\r\n' % (common.SEC_WEBSOCKET_KEY_HEADER, self._key))
+        fields.append('%s: %s\r\n' % (common.SEC_WEBSOCKET_KEY_HEADER, self._key.decode()))
         fields.append('%s: %d\r\n' % (common.SEC_WEBSOCKET_VERSION_HEADER, common.VERSION_HYBI_LATEST))
-
         extensions_to_request = []
 
         if self._deflate_frame:
@@ -300,8 +299,8 @@ class ClientHandshakeProcessor(ClientHandshakeBase):
 
         self._socket.sendall(request_line)
         for field in fields:
-            self._socket.sendall(field)
-        self._socket.sendall('\r\n')
+            self._socket.sendall(field.encode())
+        self._socket.sendall(b'\r\n')
 
         self._logger.debug('Sent client\'s opening handshake headers: %r', fields)
         self._logger.debug('Start reading Status-Line')
@@ -339,11 +338,10 @@ class ClientHandshakeProcessor(ClientHandshakeBase):
         _validate_mandatory_header(fields, common.CONNECTION_HEADER, common.UPGRADE_CONNECTION_TYPE, False)
 
         accept = _get_mandatory_header(fields, common.SEC_WEBSOCKET_ACCEPT_HEADER)
-
         # Validate
         try:
             binary_accept = base64.b64decode(accept)
-        except TypeError, e:
+        except TypeError as e:
             raise HandshakeError(
                 'Illegal value for header %s: %r' %
                 (common.SEC_WEBSOCKET_ACCEPT_HEADER, accept))
@@ -355,14 +353,13 @@ class ClientHandshakeProcessor(ClientHandshakeBase):
 
         self._logger.debug('Response for challenge : %r (%s)', accept, util.hexify(binary_accept))
 
-        binary_expected_accept = util.sha1_hash(self._key + common.WEBSOCKET_ACCEPT_UUID).digest()
+        binary_expected_accept = util.sha1_hash(self._key + common.WEBSOCKET_ACCEPT_UUID.encode()).digest()
         expected_accept = base64.b64encode(binary_expected_accept)
-
         self._logger.debug(
             'Expected response for challenge: %r (%s)',
             expected_accept, util.hexify(binary_expected_accept))
 
-        if accept != expected_accept:
+        if accept.encode() != expected_accept:
             raise ClientHandshakeError(
                 'Invalid %s header: %r (expected: %s)' %
                 (common.SEC_WEBSOCKET_ACCEPT_HEADER, accept, expected_accept))
