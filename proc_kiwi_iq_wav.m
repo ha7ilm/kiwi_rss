@@ -24,19 +24,49 @@ function [x,xx,fs,last_gpsfix]=proc_kiwi_iq_wav(varargin)
   end
 
   [x,fs]      = read_kiwi_iq_wav(fn);
-  last_gpsfix =  max(cat(1,x.gpslast));
+  last_gpsfix = max(cat(1,x.gpslast));
   idx         = find(cat(1,x.gpslast) < max_last_gpsfix);
   xx          = {};
-  if isempty(idx)
+  if numel(idx) < 2
     return
   endif
-  n = length(idx);
-  xx(n).t = [];
-  xx(n).z = [];
-  for i=1:n
-    j       = idx(i);
-    xx(i).t = x(j).gpssec + 1e-9*x(j).gpsnsec + [0:length(x(j).z)-1]'/fs;
-    xx(i).z = x(j).z;
+
+  ## filter x
+  x = x(idx);
+  n = numel(x);
+
+  ## indices of fresh GNSS timestamps
+  idx_ts = find(diff(cat(1, x.gpslast)) < 0);
+
+  ## helper functions
+  gpssec = @(s) s.gpssec + 1e-9*s.gpsnsec;
+  get_fs = @(i) 512*(idx_ts(i) - idx_ts(i-1)) / (gpssec(x(idx_ts(i))) - gpssec(x(idx_ts(i-1))));
+
+  ## (1) interval before 1st fresh timestamp
+  fs = get_fs(2);
+  for j=1:idx_ts(1)-1
+    xx(j).t = gpssec(x(j)) + [0:numel(x(j).z)-1]'/fs;
+    xx(j).z = x(j).z;
+  end
+
+  ## (2) in between fresh timestamps
+  for i=2:numel(idx_ts)
+    ##__fs = [ idx_ts(i) - idx_ts(i-1) gpssec(x(idx_ts(i))) - gpssec(x(idx_ts(i-1))) ]
+    fs = get_fs(i);
+    k  = 0;
+    for j=idx_ts(i-1):idx_ts(i)-1
+      xx(j).t = gpssec(x(idx_ts(i-1))) + (512*k+[0:numel(x(j).z)-1])'/fs;
+      xx(j).z = x(j).z;
+      k      += 1;
+    end
+  end
+
+  ## (3) after the last fresh timestamp
+  k = 0;
+  for j=idx_ts(end):n
+    xx(j).t = gpssec(x(idx_ts(end))) + (512*k+[0:numel(x(j).z)-1])'/fs;
+    xx(j).z = x(j).z;
+    k      += 1;
   end
 
 #  if length(xx) != 0
