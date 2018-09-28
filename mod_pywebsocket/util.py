@@ -198,7 +198,7 @@ class RepeatedXorMasker(object):
     def _mask_using_array(self, s):
         """Perform the mask via python."""
         result = array.array('B')
-        result.fromstring(s)
+        result.fromstring(bytes(s))
 
         # Use temporary local variables to eliminate the cost to access
         # attributes
