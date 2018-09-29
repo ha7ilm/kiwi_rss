@@ -5,6 +5,8 @@ import logging
 import socket
 import struct
 import time
+import os
+import traceback
 import numpy as np
 try:
     import urllib.parse as urllib
@@ -113,8 +115,8 @@ class KiwiSDRStreamBase(object):
         pass
 
     def _process_message(self, tag, body):
-        print('Unknown message tag: %s' % tag)
-        print(repr(body))
+        logging.warn('Unknown message tag: %s' % tag)
+        logging.warn(repr(body))
 
     def _prepare_stream(self, host, port, which):
         import mod_pywebsocket.common
@@ -123,7 +125,7 @@ class KiwiSDRStreamBase(object):
 
         self._stream_name = which;
         self._socket = socket.create_connection(address=(host, port), timeout=self._options.socket_timeout)
-        uri = '/%d/%s' % (int(time.time()), which)
+        uri = '/%d/%s' % (self._options.tstamp, which)
         handshake = wsclient.ClientHandshakeProcessor(self._socket, host, port)
         handshake.handshake(uri)
 
@@ -217,10 +219,11 @@ class KiwiSDRStream(KiwiSDRStreamBase):
 
     def _process_msg_param(self, name, value):
         if name == 'load_cfg':
-            logging.info("load_cfg: (cfg info not printed)")
+            logging.debug("load_cfg: (cfg info not printed)")
             d = json.loads(urllib.unquote(value))
             self._gps_pos = [float(x) for x in urllib.unquote(d['rx_gps'])[1:-1].split(",")[0:2]]
-            print("GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1]))
+            if self._options.idx == 0:
+                logging.info("GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1]))
             self._on_gnss_position(self._gps_pos)
         else:
             logging.debug("recv MSG (%s) %s: %s", self._stream_name, name, value)
@@ -252,11 +255,11 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             self._set_keepalive()
         elif name == 'version_maj':
             self._version_major = value
-            if self._version_major is not None and self._version_minor is not None:
+            if self._options.idx == 0 and self._version_major is not None and self._version_minor is not None:
                 logging.info("Server version: %s.%s", self._version_major, self._version_minor)
         elif name == 'version_min':
             self._version_minor = value
-            if self._version_major is not None and self._version_minor is not None:
+            if self._options.idx == 0 and self._version_major is not None and self._version_minor is not None:
                 logging.info("Server version: %s.%s", self._version_major, self._version_minor)
 
     def _process_message(self, tag, body):
@@ -266,7 +269,8 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             try:
                 self._process_aud(body)
             except Exception as e:
-                print(e)
+                logging.error(e)
+                #traceback.print_exc()
             # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         elif tag == 'W/F':
@@ -274,7 +278,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         else:
-            print("unknown tag %s" % tag)
+            logging.warn("unknown tag %s" % tag)
             pass
 
     def _process_msg(self, body):
@@ -313,7 +317,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         flags_x_zoom_server = struct.unpack('<I', buffer(body[4:8]))[0]
         seq = struct.unpack('<I', buffer(body[8:12]))[0]
         data = body[12:]
-        #print "W/F seq %d len %d" % (seq, len(data))
+        #logging.info("W/F seq %d len %d" % (seq, len(data)))
         if self._compression:
             self._decoder.__init__()   # reset decoder each sample
             samples = self._decoder.decode(data)

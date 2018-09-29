@@ -10,6 +10,24 @@ else
 endif
 
 
+UNAME = $(shell uname)
+
+# process control help
+ifeq ($(UNAME),Darwin)
+# on OS X (Darwin) there is no "interactive mode" for killall command, so use 'kp' BEFORE 'kill' to check
+kp:
+	killall -d -KILL Python
+kill:
+	killall -v -KILL Python
+else
+kp kill:
+	killall -r -i -s KILL Python
+endif
+
+ps:
+	ps ax | grep -i kiwirecorder
+
+
 # record WSPR audio to file
 #
 # "-f" frequency is dial frequency, i.e. WSPR center frequency minus passband center (BFO)
@@ -83,6 +101,21 @@ tdoa:
 rx8:
 #	python kiwirecorder.py -s $H,$H,$H,$H,$H,$H,$H,$H -f 1440 -L -5000 -H 5000 --launch-delay=15 --socket-timeout=120 -u krec-RX8
 	python kiwirecorder.py -s $H,$H,$H,$H,$H,$H,$H,$H -f 1440 -L -5000 -H 5000 -u krec-RX8
+
+
+# test reported crash situations
+
+crash:
+	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=1 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=2 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=3 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=4 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=5 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=6 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=7 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=8 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
+crash2:
+	python kiwirecorder.py -q --log-level=info --ncomp -s $H,$H,$H,$H,$H,$H,$H,$H -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
 
 
 # IQ file with GPS timestamps

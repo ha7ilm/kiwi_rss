@@ -22,7 +22,7 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         self._options = options
         self._isWF = False
         freq = options.frequency
-        #print "%s:%s freq=%d" % (options.server_host, options.server_port, freq)
+        #logging.info("%s:%s freq=%d" % (options.server_host, options.server_port, freq))
         self._freq = freq
         self._start_ts = None
         self._start_time = None
@@ -80,7 +80,7 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
             if not is_open:
                 return
             if seq > self._squelch_on_seq + 45:
-                print("\nSquelch closed")
+                logging.info("\nSquelch closed")
                 self._squelch_on_seq = None
                 self._start_ts = None
                 self._start_time = None
@@ -103,6 +103,10 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
 
     def _get_output_filename(self):
         station = '' if self._options.station is None else '_'+ self._options.station
+        
+        # if multiple connections specified but not distinguished via --station then use index
+        if self._options.multiple_connections and self._options.station is None:
+            station = '_%d' % self._options.idx
         if self._options.filename != '':
             filename = '%s%s.wav' % (self._options.filename, station)
         else:
@@ -117,7 +121,10 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
             fp.seek(0, os.SEEK_END)
             filesize = fp.tell()
             fp.seek(0, os.SEEK_SET)
-            _write_wav_header(fp, filesize, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
+
+            # fp.tell() sometimes returns zero. _write_wav_header writes filesize - 8
+            if filesize >= 8:
+                _write_wav_header(fp, filesize, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
 
     def _write_samples(self, samples, *args):
         """Output to a file on the disk."""
@@ -132,9 +139,9 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
             with open(self._get_output_filename(), 'wb') as fp:
                 _write_wav_header(fp, 100, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
             if self._options.is_kiwi_tdoa:
-                print("file=%d %s" % (self._options.idx, self._get_output_filename()))
+                logging.info("file=%d %s" % (self._options.idx, self._get_output_filename()))
             else:
-                print("\nStarted a new file: %s" % self._get_output_filename())
+                logging.info("Started a new file: %s" % self._get_output_filename())
         with open(self._get_output_filename(), 'ab') as fp:
             if self._options.is_kiwi_wav:
                 gps = args[0]
@@ -171,7 +178,7 @@ class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
         self._options = options
         self._isWF = True
         freq = options.frequency
-        #print "%s:%s freq=%d" % (options.server_host, options.server_port, freq)
+        #logging.info "%s:%s freq=%d" % (options.server_host, options.server_port, freq)
         self._freq = freq
         self._start_ts = None
 
@@ -210,7 +217,7 @@ class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
                 bmin = i
             i += 1
         span = 30000
-        print("wf samples %d bins %d..%d dB %.1f..%.1f kHz rbw %d kHz"
+        logging.info("wf samples %d bins %d..%d dB %.1f..%.1f kHz rbw %d kHz"
               % (nbins, min-255, max-255, span*bmin/bins, span*bmax/bins, span/bins))
 
 def options_cross_product(options):
@@ -220,14 +227,19 @@ def options_cross_product(options):
         return l[min(i, len(l)-1)] if type(l) == list else l
 
     l = []
+    multiple_connections = 0
     for i,s in enumerate(options.server_host):
         opt_single = copy.copy(options)
         opt_single.server_host = s;
         opt_single.status = 0;
+        
+        # time() returns seconds, so add pid and host index to make tstamp unique per connection
+        opt_single.tstamp = int(time.time() + os.getpid() + i) & 0xffffffff;
         for x in ['server_port', 'password', 'frequency', 'agc_gain', 'filename', 'station', 'user']:
             opt_single.__dict__[x] = _sel_entry(i, opt_single.__dict__[x])
         l.append(opt_single)
-    return l
+        multiple_connections = i
+    return multiple_connections,l
 
 def get_comma_separated_args(option, opt, value, parser, fn):
     values = [fn(v.strip()) for v in value.split(',')]
@@ -281,7 +293,7 @@ def main():
                       callback=get_comma_separated_args)
     parser.add_option('--launch-delay', '--launch_delay',
                       dest='launch_delay',
-                      type='int', default=1,
+                      type='int', default=0,
                       help='Delay (secs) in launching multiple connections')
     parser.add_option('-f', '--freq',
                       dest='frequency',
@@ -371,30 +383,35 @@ def main():
 
     (options, unused_args) = parser.parse_args()
     
-    logging.basicConfig(level=logging.getLevelName(options.log_level.upper()))
+    FORMAT = '%(asctime)-15s pid %(process)5d %(message)s'
+    logging.basicConfig(level=logging.getLevelName(options.log_level.upper()), format=FORMAT)
 
     run_event = threading.Event()
     run_event.set()
 
     gopt = options
-    options = options_cross_product(options)
+    multiple_connections,options = options_cross_product(options)
 
     snd_recorders = []
     if not gopt.waterfall or (gopt.waterfall and gopt.sound):
         for i,opt in enumerate(options):
+            opt.multiple_connections = multiple_connections;
             opt.idx = i
             snd_recorders.append(KiwiWorker(args=(KiwiSoundRecorder(opt),opt,run_event)))
 
     wf_recorders = []
     if gopt.waterfall:
         for i,opt in enumerate(options):
+            opt.multiple_connections = multiple_connections;
+            opt.idx = i
             wf_recorders.append(KiwiWorker(args=(KiwiWaterfallRecorder(opt),opt,run_event)))
 
     try:
         for i,r in enumerate(snd_recorders):
-            if i!=0 and options[i-1].server_host == options[i].server_host:
+            if opt.launch_delay != 0 and i != 0 and options[i-1].server_host == options[i].server_host:
                 time.sleep(opt.launch_delay)
             r.start()
+            #logging.info("started sound recorder %d, tstamp=%d" % (i, options[i].tstamp))
             logging.info("started sound recorder %d" % i)
 
         for i,r in enumerate(wf_recorders):
@@ -417,7 +434,7 @@ def main():
 
     if gopt.is_kiwi_tdoa:
       for i,opt in enumerate(options):
-          print("status=%d,%d" % (i, opt.status))
+          logging.info("status=%d,%d" % (i, opt.status))
 
 if __name__ == '__main__':
     main()
