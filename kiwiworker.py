@@ -43,6 +43,7 @@ class KiwiWorker(threading.Thread):
                 print("%s:%d %s. Reconnecting after 5 seconds"
                       % (self._options.server_host, self._options.server_port, e))
                 self._recorder.close()
+                self._recorder._start_ts = None ## this makes the recorder to open a new file on restart
                 self._event.wait(timeout=5)
                 continue
             except KiwiTooBusyError:
