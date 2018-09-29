@@ -1,6 +1,7 @@
 ## -*- python -*-
 
 import time
+import logging
 import traceback
 import threading
 
@@ -28,7 +29,7 @@ class KiwiWorker(threading.Thread):
             try:
                 self._recorder.connect(self._options.server_host, self._options.server_port)
             except Exception as e:
-                print("Failed to connect, sleeping and reconnecting error='%s'" %e)
+                logging.info("Failed to connect, sleeping and reconnecting error='%s'" %e)
                 if self._options.is_kiwi_tdoa:
                     self._options.status = 1
                     break
@@ -40,14 +41,14 @@ class KiwiWorker(threading.Thread):
                 while self._do_run():
                     self._recorder.run()
             except KiwiServerTerminatedConnection as e:
-                print("%s:%d %s. Reconnecting after 5 seconds"
+                logging.info("%s:%d %s. Reconnecting after 5 seconds"
                       % (self._options.server_host, self._options.server_port, e))
                 self._recorder.close()
                 self._recorder._start_ts = None ## this makes the recorder to open a new file on restart
                 self._event.wait(timeout=5)
                 continue
             except KiwiTooBusyError:
-                print("%s:%d too busy now. Reconnecting after 15 seconds"
+                logging.info("%s:%d too busy now. Reconnecting after 15 seconds"
                       % (self._options.server_host, self._options.server_port))
                 if self._options.is_kiwi_tdoa:
                     self._options.status = 2
