@@ -6,6 +6,7 @@ import threading
 
 from kiwiclient import KiwiTooBusyError
 from kiwiclient import KiwiTimeLimitError
+from kiwiclient import KiwiServerTerminatedConnection
 
 class KiwiWorker(threading.Thread):
     def __init__(self, group=None, target=None, name=None, args=(), kwargs=None):
@@ -38,8 +39,15 @@ class KiwiWorker(threading.Thread):
                 self._recorder.open()
                 while self._do_run():
                     self._recorder.run()
+            except KiwiServerTerminatedConnection as e:
+                print("%s:%d %s. Reconnecting after 5 seconds"
+                      % (self._options.server_host, self._options.server_port, e))
+                self._recorder.close()
+                self._event.wait(timeout=5)
+                continue
             except KiwiTooBusyError:
-                print("Server %s:%d too busy now" % (self._options.server_host, self._options.server_port))
+                print("%s:%d too busy now. Reconnecting after 15 seconds"
+                      % (self._options.server_host, self._options.server_port))
                 if self._options.is_kiwi_tdoa:
                     self._options.status = 2
                     break
@@ -54,5 +62,4 @@ class KiwiWorker(threading.Thread):
                 break
 
         self._run_event.clear()   # tell all other threads to stop
-        # hangs for some reason
-        #self._recorder.close()
+        self._recorder.close()

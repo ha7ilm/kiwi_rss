@@ -17,6 +17,7 @@ if sys.version_info > (3,):
 
 import json
 import wsclient
+from mod_pywebsocket._stream_base import ConnectionTerminatedException
 
 #
 # IMAADPCM decoder
@@ -92,6 +93,8 @@ class KiwiBadPasswordError(KiwiError):
     pass
 class KiwiTimeLimitError(KiwiError):
     pass
+class KiwiServerTerminatedConnection(KiwiError):
+    pass
 
 class KiwiSDRStreamBase(object):
     """KiwiSDR WebSocket stream base client."""
@@ -154,7 +157,7 @@ class KiwiSDRStreamBase(object):
         self._send_message('SET keepalive')
 
     def _process_ws_message(self, message):
-        tag = message[0:3].decode()
+        tag = message[0:3].decode('utf-8')
         body = message[4:]
         self._process_message(tag, body)
 
@@ -215,7 +218,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
     def _process_msg_param(self, name, value):
         if name == 'load_cfg':
             logging.info("load_cfg: (cfg info not printed)")
-            d = json.loads(urllib.unquote(value.decode()))
+            d = json.loads(urllib.unquote(value))
             self._gps_pos = [float(x) for x in urllib.unquote(d['rx_gps'])[1:-1].split(",")[0:2]]
             print("GNSS position: lat,lon=[%+6.2f, %+7.2f]" % (self._gps_pos[0], self._gps_pos[1]))
             self._on_gnss_position(self._gps_pos)
@@ -258,7 +261,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
 
     def _process_message(self, tag, body):
         if tag == 'MSG':
-            self._process_msg(body)
+            self._process_msg(body.decode('utf-8'))
         elif tag == 'SND':
             try:
                 self._process_aud(body)
@@ -275,13 +278,13 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             pass
 
     def _process_msg(self, body):
-        for pair in body.split(b' '):
-            if b'=' in pair:
-                name, value = pair.split(b'=', 1)
-                self._process_msg_param(name.decode(), value)
+        for pair in body.split(' '):
+            if '=' in pair:
+                name, value = pair.split('=', 1)
+                self._process_msg_param(name, value)
             else:
                 name = pair
-                self._process_msg_param(name.decode(), None)
+                self._process_msg_param(name, None)
 
     def _process_aud(self, body):
         seq = struct.unpack('<I', buffer(body[0:4]))[0]
@@ -350,15 +353,25 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         self._set_auth('kiwi', self._options.password)
 
     def close(self):
+        from mod_pywebsocket.common import STATUS_GOING_AWAY
         try:
-            self._stream.close_connection()
+            ## STATUS_GOING_AWAY does not make the stream to wait for a reply for the WS close request
+            ## this is used because close_connection expects the close response from the server immediately
+            self._stream.close_connection(STATUS_GOING_AWAY)
             self._socket.close()
         except Exception as e:
-            print("exception: %s" % e)
+            logging.error('websocket close: "%s"' % e)
 
     def run(self):
         """Run the client."""
-        received = self._stream.receive_message()
+        try:
+            received = self._stream.receive_message()
+            if received is None:
+                self._socket.close()
+                raise KiwiServerTerminatedConnection('server closed the connection cleanly')
+        except ConnectionTerminatedException:
+                raise KiwiServerTerminatedConnection('server closed the connection unexpectedly')
+
         self._process_ws_message(received)
         tlimit = self._options.tlimit
         if tlimit != None and self._start_time != None and time.time() - self._start_time > tlimit:

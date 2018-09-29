@@ -73,7 +73,7 @@ def _receive_bytes(socket, length):
                 (length, length - remaining))
         bytes.append(received_bytes)
         remaining -= len(received_bytes)
-    return bytearray().join(bytes).decode()
+    return bytearray().join(bytes).decode('utf-8')
 
 
 def _get_mandatory_header(fields, name):
@@ -409,7 +409,10 @@ class ClientConnection(object):
         self._socket = socket
 
     def write(self, data):
-        self._socket.sendall(data)
+        try:
+            self._socket.sendall(data)
+        except Exception as e:
+            logging.debug('ClientConnection write error: "%s"' % e)
 
     def read(self, n):
         return self._socket.recv(n)
