@@ -3,16 +3,10 @@ Modified echo client from the pywebsocket examples
 """
 
 import base64
-import codecs
 import logging
-from optparse import OptionParser
 import os
-import random
 import re
 import socket
-import struct
-import sys
-import time
 
 from mod_pywebsocket import common
 from mod_pywebsocket.extensions import DeflateFrameExtensionProcessor
