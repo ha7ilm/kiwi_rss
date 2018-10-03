@@ -5,8 +5,6 @@ import logging
 import socket
 import struct
 import time
-import os
-import traceback
 import numpy as np
 try:
     import urllib.parse as urllib
@@ -18,8 +16,10 @@ if sys.version_info > (3,):
     buffer = memoryview
 
 import json
-import wsclient
+import mod_pywebsocket.common
 from mod_pywebsocket._stream_base import ConnectionTerminatedException
+from mod_pywebsocket.stream import Stream, StreamOptions
+from wsclient import ClientHandshakeProcessor, ClientRequest
 
 #
 # IMAADPCM decoder
@@ -109,6 +109,7 @@ class KiwiSDRStreamBase(object):
         self._version_major = None
         self._version_minor = None
         self._modulation = None
+        self._stream = None
 
     def connect(self, host, port):
         # self._prepare_stream(host, port, 'SND')
@@ -119,17 +120,13 @@ class KiwiSDRStreamBase(object):
         logging.warn(repr(body))
 
     def _prepare_stream(self, host, port, which):
-        import mod_pywebsocket.common
-        from mod_pywebsocket.stream import Stream
-        from mod_pywebsocket.stream import StreamOptions
-
         self._stream_name = which;
         self._socket = socket.create_connection(address=(host, port), timeout=self._options.socket_timeout)
         uri = '/%d/%s' % (self._options.tstamp, which)
-        handshake = wsclient.ClientHandshakeProcessor(self._socket, host, port)
+        handshake = ClientHandshakeProcessor(self._socket, host, port)
         handshake.handshake(uri)
 
-        request = wsclient.ClientRequest(self._socket)
+        request = ClientRequest(self._socket)
         request.ws_version = mod_pywebsocket.common.VERSION_HYBI13
 
         stream_option = StreamOptions()
@@ -141,7 +138,7 @@ class KiwiSDRStreamBase(object):
     def _send_message(self, msg):
         if msg != 'SET keepalive':
             logging.debug("send SET (%s) %s", self._stream_name, msg)
-        self._stream.send_message(str(msg))
+        self._stream.send_message(msg)
 
     def _set_auth(self, client_type, password=''):
         self._send_message('SET auth t=%s p=%s' % (client_type, password))
@@ -168,6 +165,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
     """KiwiSDR WebSocket stream client."""
 
     def __init__(self, *args, **kwargs):
+        super(KiwiSDRStream, self).__init__()
         self._decoder = ImaAdpcmDecoder()
         self._sample_rate = None
         self._version_major = None
@@ -270,7 +268,6 @@ class KiwiSDRStream(KiwiSDRStreamBase):
                 self._process_aud(body)
             except Exception as e:
                 logging.error(e)
-                #traceback.print_exc()
             # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         elif tag == 'W/F':
@@ -357,11 +354,12 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         self._set_auth('kiwi', self._options.password)
 
     def close(self):
-        from mod_pywebsocket.common import STATUS_GOING_AWAY
+        if self._stream == None:
+            return
         try:
             ## STATUS_GOING_AWAY does not make the stream to wait for a reply for the WS close request
             ## this is used because close_connection expects the close response from the server immediately
-            self._stream.close_connection(STATUS_GOING_AWAY)
+            self._stream.close_connection(mod_pywebsocket.common.STATUS_GOING_AWAY)
             self._socket.close()
         except Exception as e:
             logging.error('websocket close: "%s"' % e)
