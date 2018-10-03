@@ -1,11 +1,14 @@
 #!/usr/bin/env python
 ## -*- python -*-
 
-import array, codecs, logging, os, struct, sys, time, traceback, copy, threading, os
-from optparse import OptionParser
+import array, logging, os, struct, sys, time, copy, threading, os
+import gc
 
-import kiwiclient
+from copy import copy
+from traceback import print_exc
+from kiwiclient import KiwiSDRStream
 from kiwiworker import KiwiWorker
+from optparse import OptionParser
 
 def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     fp.write(struct.pack('<4sI4s', b'RIFF', filesize - 8, b'WAVE'))
@@ -16,7 +19,7 @@ def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     if not is_kiwi_wav:
         fp.write(struct.pack('<4sI', b'data', filesize - 12 - 8 - 16 - 8))
 
-class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
+class KiwiSoundRecorder(KiwiSDRStream):
     def __init__(self, options):
         super(KiwiSoundRecorder, self).__init__()
         self._options = options
@@ -95,7 +98,7 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
         for x in [[y.real, y.imag] for y in samples]:
             s.extend(map(int, x))
         self._write_samples(s, gps)
-        
+
         # no GPS or no recent GPS solution
         last = gps['last_gps_solution']
         if last == 255 or last == 254:
@@ -103,7 +106,7 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
 
     def _get_output_filename(self):
         station = '' if self._options.station is None else '_'+ self._options.station
-        
+
         # if multiple connections specified but not distinguished via --station then use index
         if self._options.multiple_connections and self._options.station is None:
             station = '_%d' % self._options.idx
@@ -172,7 +175,7 @@ class KiwiSoundRecorder(kiwiclient.KiwiSDRStream):
                            self._options.server_host,
                            self._options.server_port))
 
-class KiwiWaterfallRecorder(kiwiclient.KiwiSDRStream):
+class KiwiWaterfallRecorder(KiwiSDRStream):
     def __init__(self, options):
         super(KiwiWaterfallRecorder, self).__init__()
         self._options = options
@@ -229,10 +232,10 @@ def options_cross_product(options):
     l = []
     multiple_connections = 0
     for i,s in enumerate(options.server_host):
-        opt_single = copy.copy(options)
+        opt_single = copy(options)
         opt_single.server_host = s;
         opt_single.status = 0;
-        
+
         # time() returns seconds, so add pid and host index to make tstamp unique per connection
         opt_single.tstamp = int(time.time() + os.getpid() + i) & 0xffffffff;
         for x in ['server_port', 'password', 'frequency', 'agc_gain', 'filename', 'station', 'user']:
@@ -252,8 +255,6 @@ def join_threads(snd, wf):
     [t.join() for t in threading.enumerate() if t is not threading.currentThread()]
 
 def main():
-##    sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
-
     parser = OptionParser()
     parser.add_option('--log-level', '--log_level', type='choice',
                       dest='log_level', default='warn',
@@ -382,9 +383,14 @@ def main():
                       help='Also process sound data when in waterfall mode')
 
     (options, unused_args) = parser.parse_args()
-    
+
+    ## clean up OptionParser which has cyclic references
+    parser.destroy()
+
     FORMAT = '%(asctime)-15s pid %(process)5d %(message)s'
     logging.basicConfig(level=logging.getLevelName(options.log_level.upper()), format=FORMAT)
+    if options.log_level.upper() == 'DEBUG':
+        gc.set_debug(gc.DEBUG_SAVEALL)
 
     run_event = threading.Event()
     run_event.set()
@@ -422,12 +428,13 @@ def main():
 
         while run_event.is_set():
             time.sleep(.1)
+
     except KeyboardInterrupt:
         run_event.clear()
         join_threads(snd_recorders, wf_recorders)
         print("KeyboardInterrupt: threads successfully closed")
     except Exception as e:
-        traceback.print_exc()
+        print_exc()
         run_event.clear()
         join_threads(snd_recorders, wf_recorders)
         print("Exception: threads successfully closed")
@@ -436,7 +443,8 @@ def main():
       for i,opt in enumerate(options):
           logging.info("status=%d,%d" % (i, opt.status))
 
+    logging.debug('gc %s' % gc.garbage)
+
 if __name__ == '__main__':
     main()
-
 # EOF

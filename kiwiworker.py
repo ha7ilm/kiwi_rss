@@ -1,9 +1,8 @@
 ## -*- python -*-
 
-import time
 import logging
-import traceback
 import threading
+from traceback import print_exc
 
 from kiwiclient import KiwiTooBusyError
 from kiwiclient import KiwiTimeLimitError
@@ -17,12 +16,6 @@ class KiwiWorker(threading.Thread):
 
     def _do_run(self):
         return self._run_event.is_set()
-
-    def _sleep(self, seconds):
-        for i in range(seconds):
-            if not self._do_run():
-                break;
-            self._event.wait(timeout=1)
 
     def run(self):
         while self._do_run():
@@ -60,7 +53,7 @@ class KiwiWorker(threading.Thread):
             except Exception as e:
                 if self._options.is_kiwi_tdoa:
                     self._options.status = 1
-                traceback.print_exc()
+                print_exc()
                 break
 
         self._run_event.clear()   # tell all other threads to stop
