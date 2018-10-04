@@ -142,7 +142,8 @@ class KiwiSoundRecorder(KiwiSDRStream):
             with open(self._get_output_filename(), 'wb') as fp:
                 _write_wav_header(fp, 100, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
             if self._options.is_kiwi_tdoa:
-                logging.info("file=%d %s" % (self._options.idx, self._get_output_filename()))
+                # NB: MUST be a print (i.e. not a logging.info)
+                print("file=%d %s" % (self._options.idx, self._get_output_filename()))
             else:
                 logging.info("Started a new file: %s" % self._get_output_filename())
         with open(self._get_output_filename(), 'ab') as fp:
@@ -441,7 +442,8 @@ def main():
 
     if gopt.is_kiwi_tdoa:
       for i,opt in enumerate(options):
-          logging.info("status=%d,%d" % (i, opt.status))
+          # NB: MUST be a print (i.e. not a logging.info)
+          print("status=%d,%d" % (i, opt.status))
 
     logging.debug('gc %s' % gc.garbage)
 
