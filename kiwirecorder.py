@@ -57,7 +57,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
 
     def _process_audio_samples(self, seq, samples, rssi):
         if self._options.quiet is False:
-          sys.stdout.write('\rBlock: %08x, RSSI: %-04d' % (seq, rssi))
+          sys.stdout.write('\rBlock: %08x, RSSI: %6.1f' % (seq, rssi))
           sys.stdout.flush()
         if self._options.thresh is not None:
             if self._nf_samples < len(self._nf_array) or self._squelch_on_seq is None:
