@@ -14,6 +14,11 @@ except ImportError:
 import sys
 if sys.version_info > (3,):
     buffer = memoryview
+    def bytearray2str(b):
+        return b.decode('ascii')
+else:
+    def bytearray2str(b):
+        return str(b)
 
 import json
 import mod_pywebsocket.common
@@ -156,8 +161,8 @@ class KiwiSDRStreamBase(object):
         self._send_message('SET keepalive')
 
     def _process_ws_message(self, message):
-        tag = message[0:3].decode('utf-8')
-        body = message[4:]
+        tag = bytearray2str(message[0:3])
+        body = message[3:]
         self._process_message(tag, body)
 
 
@@ -262,7 +267,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
 
     def _process_message(self, tag, body):
         if tag == 'MSG':
-            self._process_msg(body.decode('utf-8'))
+            self._process_msg(bytearray2str(body[1:])) ## skip 1st byte
         elif tag == 'SND':
             try:
                 self._process_aud(body)
@@ -271,7 +276,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         elif tag == 'W/F':
-            self._process_wf(body)
+            self._process_wf(body[1:]) ## skip 1st byte
             # Ensure we don't get kicked due to timeouts
             self._set_keepalive()
         else:
@@ -288,10 +293,11 @@ class KiwiSDRStream(KiwiSDRStreamBase):
                 self._process_msg_param(name, None)
 
     def _process_aud(self, body):
-        seq = struct.unpack('<I', buffer(body[0:4]))[0]
-        smeter = struct.unpack('>H', buffer(body[4:6]))[0]
-        data = body[6:]
-        rssi = (smeter & 0x0FFF) // 10 - 127
+        flags,seq, = struct.unpack('<BI', buffer(body[0:5]))
+        smeter,    = struct.unpack('>H',  buffer(body[5:7]))
+        data       = body[7:]
+        rssi       = 0.1*smeter - 127
+        ##logging.info("SND flags %2d seq %6d RSSI %6.1f len %d" % (flags, seq, rssi, len(data)))
         if self._modulation == 'iq':
             gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], struct.unpack('<BBII', buffer(data[0:10]))))
             data = data[10:]
@@ -310,20 +316,15 @@ class KiwiSDRStream(KiwiSDRStreamBase):
             self._process_audio_samples(seq, samples, rssi)
 
     def _process_wf(self, body):
-        x_bin_server = struct.unpack('<I', buffer(body[0:4]))[0]
-        flags_x_zoom_server = struct.unpack('<I', buffer(body[4:8]))[0]
-        seq = struct.unpack('<I', buffer(body[8:12]))[0]
+        x_bin_server,flags_x_zoom_server,seq, = struct.unpack('<III', buffer(body[0:12]))
         data = body[12:]
-        #logging.info("W/F seq %d len %d" % (seq, len(data)))
+        logging.info("W/F seq %d len %d" % (seq, len(data)))
         if self._compression:
             self._decoder.__init__()   # reset decoder each sample
             samples = self._decoder.decode(data)
             samples = samples[:len(samples)-10]   # remove decompression tail
         else:
-            fcn = ord if isinstance(data, str) else lambda x : x
-            samples = array.array('h')
-            for b in map(fcn, data):
-                samples.append(b)
+            samples = np.ndarray(len(data), dtype='B', buffer=data)
         self._process_waterfall_samples(seq, samples)
 
     def _on_gnss_position(self, position):
