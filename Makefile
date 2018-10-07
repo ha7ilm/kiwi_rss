@@ -96,6 +96,8 @@ H = $(HOST)
 
 real:
 	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000
+ncomp:
+	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000 --ncomp
 tdoa:
 	python -u kiwirecorder.py -s $(HOST_TDOA) -f 1440 -m iq -L -5000 -H 5000 --kiwi-wav --kiwi-tdoa --tlimit=10 -u krec-TDoA
 rx8:
