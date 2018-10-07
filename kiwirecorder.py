@@ -30,7 +30,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
         self._start_ts = None
         self._start_time = None
         self._squelch_on_seq = None
-        self._nf_array = array.array('i')
+        self._nf_array = array.array('f')
         for x in range(65):
             self._nf_array.insert(x, 0)
         self._nf_samples = 0
@@ -57,7 +57,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
 
     def _process_audio_samples(self, seq, samples, rssi):
         if self._options.quiet is False:
-          sys.stdout.write('\rBlock: %08x, RSSI: %-04d' % (seq, rssi))
+          sys.stdout.write('\rBlock: %08x, RSSI: %6.1f' % (seq, rssi))
           sys.stdout.flush()
         if self._options.thresh is not None:
             if self._nf_samples < len(self._nf_array) or self._squelch_on_seq is None:
@@ -69,7 +69,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
                 self._nf_samples += 1
                 return
 
-            median_nf = sorted(self._nf_array)[len(self._nf_array) // 3]
+            median_nf = sorted(self._nf_array)[len(self._nf_array) // 3] ## should be // 2
             rssi_thresh = median_nf + self._options.thresh
             is_open = self._squelch_on_seq is not None
             if is_open:
@@ -79,7 +79,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
                 self._squelch_on_seq = seq
                 is_open = True
             if self._options.quiet is False:
-                sys.stdout.write(' Median: %-04d Thr: %-04d %s' % (median_nf, rssi_thresh, ("s", "S")[is_open]))
+                sys.stdout.write(' Median: %6.1f Thr: %6.1f %s' % (median_nf, rssi_thresh, ("s", "S")[is_open]))
             if not is_open:
                 return
             if seq > self._squelch_on_seq + 45:
@@ -186,13 +186,6 @@ class KiwiWaterfallRecorder(KiwiSDRStream):
         self._freq = freq
         self._start_ts = None
 
-        # xxx
-        self._squelch_on_seq = None
-        self._nf_array = array.array('i')
-        for x in range(65):
-            self._nf_array.insert(x, 0)
-        self._nf_samples = 0
-        self._nf_index = 0
         self._num_channels = 2 if options.modulation == 'iq' else 1
         self._last_gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], [0,0,0,0]))
 
