@@ -10,52 +10,60 @@ import websockets
 import struct
 import random
 
-async def consumer_handler(websocket, path):
-    async for message in websocket:
+@asyncio.coroutine
+def consumer_handler(websocket, path):
+    while True:
+        message = yield from websocket.recv()
         if message.find('SET keepalive') < 0:
             print('got', path, message)
 
-async def producer_handler(websocket, path):
+@asyncio.coroutine
+def producer_handler(websocket, path):
     i=0
+    r=0;
     while True:
         if (i%10000) == 0:
             print('i=%12d %10.2f h' % (i, i/12000./3600*512))
-        data = b''.join([b'SND', struct.pack('<BIH256h', 0,i,0,*[random.randint(-32767, 32767) for x in range(256)])])
-        await websocket.send(data);
-        if (i%100000)>random.randint(0,100000):
-            pong_waiter = await websocket.ping()
-            await pong_waiter
+        if (i%100000) == 0:
+            r = random.randint(0,100000)
+        ##data = b''.join([b'SND', struct.pack('<BIH256h', 0,i,0,*[random.randint(-32767, 32767) for x in range(256)])])
+        data = b''.join([b'SND', struct.pack('<BIH256H', 0,i,0,*[(x+i)%0xFFFF for x in range(256)])])
+        yield from websocket.send(data);
+        if (i%100000) == r:
+            pong_waiter = yield from websocket.ping()
+            yield from pong_waiter
         if i<4294967296:
             i = i+1
         else:
             i = 0
 
-async def handler(websocket, path):
-    name = await websocket.recv()
-    print(f"< {name}")
+@asyncio.coroutine
+def handler(websocket, path):
+    name = yield from websocket.recv()
+    print(name)
 
-    await websocket.send("MSG client_public_ip=194.12.153.169")
-    await websocket.send("MSG rx_chans=8")
-    await websocket.send("MSG chan_no_pwd=0")
-    await websocket.send("MSG badp=0")
-    await websocket.send("MSG version_maj=1")
-    await websocket.send("MSG version_min=237")
-    await websocket.send("MSG center_freq=15000000")
-    await websocket.send("MSG bandwidth=30000000")
-    await websocket.send("MSG adc_clk_nom=66666600")
-    await websocket.send("MSG audio_init=0")
-    await websocket.send("MSG audio_rate=12000")
-    name = await websocket.recv()
-    await websocket.send(f"MSG sample_rate=12001.135")
-    name = await websocket.recv()
+    yield from websocket.send("MSG client_public_ip=194.12.153.169")
+    yield from websocket.send("MSG rx_chans=8")
+    yield from websocket.send("MSG chan_no_pwd=0")
+    yield from websocket.send("MSG badp=0")
+    yield from websocket.send("MSG version_maj=1")
+    yield from websocket.send("MSG version_min=237")
+    yield from websocket.send("MSG center_freq=15000000")
+    yield from websocket.send("MSG bandwidth=30000000")
+    yield from websocket.send("MSG adc_clk_nom=66666600")
+    yield from websocket.send("MSG audio_init=0")
+    yield from websocket.send("MSG audio_rate=12000")
+    name = yield from websocket.recv()
+    yield from websocket.send("MSG sample_rate=12001.135")
+    name = yield from websocket.recv()
     while name != 'SET OVERRIDE inactivity_timeout=0':
-        name = await websocket.recv()
+        name = yield from websocket.recv()
 
     consumer_task = asyncio.ensure_future(
         consumer_handler(websocket, path))
     producer_task = asyncio.ensure_future(
         producer_handler(websocket, path))
-    done, pending = await asyncio.wait(
+    done, pending = yield from asyncio.wait(
         [consumer_task, producer_task],
         return_when=asyncio.FIRST_COMPLETED,
     )
