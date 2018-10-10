@@ -448,5 +448,7 @@ def main():
     logging.debug('gc %s' % gc.garbage)
 
 if __name__ == '__main__':
+    import faulthandler
+    faulthandler.enable()
     main()
 # EOF
