@@ -105,6 +105,8 @@ class KiwiSoundRecorder(KiwiSDRStream):
             self._options.status = 3
 
     def _get_output_filename(self):
+        if self._options.test_mode:
+            return '/dev/null'
         station = '' if self._options.station is None else '_'+ self._options.station
 
         # if multiple connections specified but not distinguished via --station then use index
@@ -375,6 +377,11 @@ def main():
                       default=False,
                       action='store_true',
                       help='Also process sound data when in waterfall mode')
+    parser.add_option('--test-mode',
+                      dest='test_mode',
+                      default=False,
+                      action='store_true',
+                      help='write wav data to /dev/null')
 
     (options, unused_args) = parser.parse_args()
 
@@ -384,7 +391,7 @@ def main():
     FORMAT = '%(asctime)-15s pid %(process)5d %(message)s'
     logging.basicConfig(level=logging.getLevelName(options.log_level.upper()), format=FORMAT)
     if options.log_level.upper() == 'DEBUG':
-        gc.set_debug(gc.DEBUG_SAVEALL)
+        gc.set_debug(gc.DEBUG_SAVEALL | gc.DEBUG_LEAK | gc.DEBUG_UNCOLLECTABLE)
 
     run_event = threading.Event()
     run_event.set()
@@ -441,5 +448,7 @@ def main():
     logging.debug('gc %s' % gc.garbage)
 
 if __name__ == '__main__':
+    import faulthandler
+    faulthandler.enable()
     main()
 # EOF
