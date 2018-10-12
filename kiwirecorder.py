@@ -250,10 +250,10 @@ def join_threads(snd, wf):
 
 def main():
     parser = OptionParser()
-    parser.add_option('--log-level', '--log_level', type='choice',
+    parser.add_option('--log', '--log-level', '--log_level', type='choice',
                       dest='log_level', default='warn',
                       choices=['debug', 'info', 'warn', 'error', 'critical'],
-                      help='Log level: debug|info|warn|error|critical')
+                      help='Log level: debug|info|warn(default)|error|critical')
     parser.add_option('-q', '--quiet',
                       dest='quiet',
                       default=False,

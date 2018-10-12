@@ -151,9 +151,7 @@ micro:
 	python microkiwi_waterfall.py -s $(HOST_WF) -z 0 -o 0
 
 
-help:
-	python kiwifax.py --help
-	@echo
+help h:
 	python kiwirecorder.py --help
 
 clean:
