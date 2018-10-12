@@ -5,6 +5,11 @@ This is a Python client for KiwiSDR. It allows you to:
 * Receive data streams with audio samples, IQ samples, and waterfall data
 * Issue commands to the KiwiSDR
 
+## Dependencies
+
+Make sure the Python package `'numpy'` is installed.
+On many Linux distributions the command would be similar to `'apt install python-numpy'`
+
 ## Demo code
 
 The following demo programs are provided to you to play with:
