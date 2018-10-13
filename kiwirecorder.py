@@ -169,9 +169,10 @@ class KiwiSoundRecorder(KiwiSDRStream):
                 pos_dir = 'gnss_pos'
                 pos_record = True
         if pos_record:
-            pos_filename = pos_dir +'/'+ self._options.station+'.txt'
+            station = 'kiwi_noname' if self._options.station is None else self._options.station
+            pos_filename = pos_dir +'/'+ station + '.txt'
             with open(pos_filename, 'w') as f:
-                station = self._options.station.replace('-', '_')   # since Octave var name
+                station = station.replace('-', '_')   # since Octave var name
                 f.write("d.%s = struct('coord', [%f,%f], 'host', '%s', 'port', %d);\n"
                         % (station,
                            pos[0], pos[1],
