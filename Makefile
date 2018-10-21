@@ -107,17 +107,27 @@ rx8:
 
 # test reported crash situations
 
+#M = -m usb
+M = -m usb --ncomp     # mode used by kiwiwspr.sh
+#M = -m iq
+
 crash:
-	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=1 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
-	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=2 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
-	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=3 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
-	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=4 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
-	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=5 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
-	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=6 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
-	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=7 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
-	python kiwirecorder.py -q --log-level=info --ncomp -s $H --station=8 -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
-crash2:
-	python kiwirecorder.py -q --log-level=info --ncomp -s $H,$H,$H,$H,$H,$H,$H,$H -f 28124.6 -m usb -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info -s $H --station=1 -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info -s $H --station=2 -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info -s $H --station=3 -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info -s $H --station=4 -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info -s $H --station=5 -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info -s $H --station=6 -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info -s $H --station=7 -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120 &
+	python kiwirecorder.py -q --log-level=info -s $H --station=8 -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120 &
+crash5:
+	python kiwirecorder.py -q --log-level=info -s $H,$H,$H,$H,$H -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120
+crash6:
+	python kiwirecorder.py -q --log-level=info -s $H,$H,$H,$H,$H,$H -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120
+crash7:
+	python kiwirecorder.py -q --log-level=info -s $H,$H,$H,$H,$H,$H,$H -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120
+crash8:
+	python kiwirecorder.py -q --log-level=info -s $H,$H,$H,$H,$H,$H,$H,$H -f 28124.6 $M -L 1200 -H 1700 -T -101 --dt-sec 120
 
 
 # IQ file with GPS timestamps
