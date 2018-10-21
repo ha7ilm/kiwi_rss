@@ -3,6 +3,7 @@
 
 import array, logging, os, struct, sys, time, copy, threading, os
 import gc
+import numpy as np
 
 from copy import copy
 from traceback import print_exc
@@ -19,6 +20,60 @@ def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     if not is_kiwi_wav:
         fp.write(struct.pack('<4sI', b'data', filesize - 12 - 8 - 16 - 8))
 
+
+class RingBuffer(object):
+    def __init__(self, len):
+        self._array = np.zeros(65, dtype='float')
+        self._index = 0
+        self._is_filled = False
+
+    def insert(self, sample):
+        self._array[self._index] = sample;
+        self._index += 1
+        if self._index == len(self._array):
+            self._is_filled = True;
+            self._index = 0
+
+    def is_filled(self):
+        return self._is_filled
+
+    def median(self):
+        return np.median(self._array)
+
+
+class Squelch(object):
+    def __init__(self, options):
+        self._status_msg  = not options.quiet
+        self._threshold   = options.thresh
+        self._tail_delay  = round(options.squelch_tail*12000/512) ## seconds to number of buffers
+        self._ring_buffer = RingBuffer(65)
+        self._squelch_on_seq = None
+
+    def process(self, seq, rssi):
+        if not self._ring_buffer.is_filled() or self._squelch_on_seq is None:
+            self._ring_buffer.insert(rssi)
+        if not self._ring_buffer.is_filled():
+            return False
+        median_nf   = self._ring_buffer.median()
+        rssi_thresh = median_nf + self._threshold
+        is_open     = self._squelch_on_seq is not None
+        if is_open:
+            rssi_thresh -= 6
+        rssi_green = rssi >= rssi_thresh
+        if rssi_green:
+            self._squelch_on_seq = seq
+            is_open = True
+        if self._status_msg:
+            sys.stdout.write('\r Median: %6.1f Thr: %6.1f %s' % (median_nf, rssi_thresh, ("s", "S")[is_open]))
+            sys.stdout.flush()
+        if not is_open:
+            return False
+        if seq > self._squelch_on_seq + self._tail_delay:
+            logging.info("\nSquelch closed")
+            self._squelch_on_seq = None
+            return False
+        return is_open
+
 class KiwiSoundRecorder(KiwiSDRStream):
     def __init__(self, options):
         super(KiwiSoundRecorder, self).__init__()
@@ -29,12 +84,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
         self._freq = freq
         self._start_ts = None
         self._start_time = None
-        self._squelch_on_seq = None
-        self._nf_array = array.array('f')
-        for x in range(65):
-            self._nf_array.insert(x, 0)
-        self._nf_samples = 0
-        self._nf_index = 0
+        self._squelch = Squelch(self._options) if options.thresh is not None else None
         self._num_channels = 2 if options.modulation == 'iq' else 1
         self._last_gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], [0,0,0,0]))
 
@@ -59,38 +109,21 @@ class KiwiSoundRecorder(KiwiSDRStream):
         if self._options.quiet is False:
           sys.stdout.write('\rBlock: %08x, RSSI: %6.1f' % (seq, rssi))
           sys.stdout.flush()
-        if self._options.thresh is not None:
-            if self._nf_samples < len(self._nf_array) or self._squelch_on_seq is None:
-                self._nf_array[self._nf_index] = rssi
-                self._nf_index += 1
-                if self._nf_index == len(self._nf_array):
-                    self._nf_index = 0
-            if self._nf_samples < len(self._nf_array):
-                self._nf_samples += 1
-                return
-
-            median_nf = sorted(self._nf_array)[len(self._nf_array) // 3] ## should be // 2
-            rssi_thresh = median_nf + self._options.thresh
-            is_open = self._squelch_on_seq is not None
-            if is_open:
-                rssi_thresh -= 6
-            rssi_green = rssi >= rssi_thresh
-            if rssi_green:
-                self._squelch_on_seq = seq
-                is_open = True
-            if self._options.quiet is False:
-                sys.stdout.write(' Median: %6.1f Thr: %6.1f %s' % (median_nf, rssi_thresh, ("s", "S")[is_open]))
+        if self._squelch:
+            is_open = self._squelch.process(seq, rssi)
             if not is_open:
-                return
-            if seq > self._squelch_on_seq + 45:
-                logging.info("\nSquelch closed")
-                self._squelch_on_seq = None
                 self._start_ts = None
                 self._start_time = None
                 return
         self._write_samples(samples, {})
 
     def _process_iq_samples(self, seq, samples, rssi, gps):
+        if self._squelch:
+            is_open = self._squelch.process(seq, rssi)
+            if not is_open:
+                self._start_ts = None
+                self._start_time = None
+                return
         ##print gps['gpsnsec']-self._last_gps['gpsnsec']
         self._last_gps = gps
         ## convert list of complex numbers into an array
@@ -353,10 +386,14 @@ def main():
                       dest='tlimit',
                       type='float', default=None,
                       help='Record time limit in seconds')
-    parser.add_option('-T', '--threshold',
+    parser.add_option('-T', '--squelch-threshold',
                       dest='thresh',
                       type='float', default=None,
                       help='Squelch threshold, in dB.')
+    parser.add_option('--squelch-tail',
+                      dest='squelch_tail',
+                      type='float', default=1,
+                      help='Time for which the squelch remains open after the signal is below threshold.')
     parser.add_option('-g', '--agc-gain',
                       dest='agc_gain',
                       type='string',
