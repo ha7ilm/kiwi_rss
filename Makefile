@@ -64,14 +64,15 @@ drm:
 #HOST_FAX = $(HOST)
 
 # UK
-HOST_FAX = southwest.ddns.net
-HOST_FAX_PORT = 8073
-FREQ_FAX = 2618.5
+#HOST_FAX = southwest.ddns.net
+#HOST_FAX_PORT = 8073
+#FREQ_FAX = 2618.5
+#FREQ_FAX = 7880
 
 # Australia
-#HOST_FAX = sdrtas.ddns.net
-#HOST_FAX_PORT = 8073
-#FREQ_FAX = 13920
+HOST_FAX = sdrbris.proxy.kiwisdr.com
+HOST_FAX_PORT = 8073
+FREQ_FAX = 16135
 
 fax:
 	python kiwifax.py -s $(HOST_FAX) -p $(HOST_FAX_PORT) -f $(FREQ_FAX) -F

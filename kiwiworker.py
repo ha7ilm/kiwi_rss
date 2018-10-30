@@ -12,6 +12,7 @@ class KiwiWorker(threading.Thread):
     def __init__(self, group=None, target=None, name=None, args=(), kwargs=None):
         super(KiwiWorker, self).__init__(group=group, target=target, name=name)
         self._recorder, self._options, self._run_event = args
+        self._recorder._reader = True
         self._event = threading.Event()
 
     def _do_run(self):

@@ -78,7 +78,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
     def __init__(self, options):
         super(KiwiSoundRecorder, self).__init__()
         self._options = options
-        self._isWF = False
+        self._type = 'SND'
         freq = options.frequency
         #logging.info("%s:%s freq=%d" % (options.server_host, options.server_port, freq))
         self._freq = freq
@@ -216,7 +216,7 @@ class KiwiWaterfallRecorder(KiwiSDRStream):
     def __init__(self, options):
         super(KiwiWaterfallRecorder, self).__init__()
         self._options = options
-        self._isWF = True
+        self._type = 'W/F'
         freq = options.frequency
         #logging.info "%s:%s freq=%d" % (options.server_host, options.server_port, freq)
         self._freq = freq
