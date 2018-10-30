@@ -180,7 +180,7 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         self._gps_pos = [0,0]
 
     def connect(self, host, port):
-        self._prepare_stream(host, port, 'W/F' if self._isWF else 'SND')
+        self._prepare_stream(host, port, self._type)
 
     def set_mod(self, mod, lc, hc, freq):
         mod = mod.lower()
@@ -343,16 +343,20 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         pass
 
     def _setup_rx_params(self):
-        if self._isWF:
+        if self._type == 'W/F':
             self._set_zoom_start(0, 0)
             self._set_maxdb_mindb(-10, -110)
             self._set_wf_speed(1)
-        else:
+        if self._type == 'SND':
             self._set_mod('am', 100, 2800, 4625.0)
             self._set_agc(True)
+    
+    def _writer_message(self):
+        pass
 
     def open(self):
-        self._set_auth('kiwi', self._options.password)
+        if self._type == 'SND' or self._type == 'W/F':
+            self._set_auth('kiwi', self._options.password)
 
     def close(self):
         if self._stream == None:
@@ -367,15 +371,21 @@ class KiwiSDRStream(KiwiSDRStreamBase):
 
     def run(self):
         """Run the client."""
-        try:
-            received = self._stream.receive_message()
-            if received is None:
-                self._socket.close()
-                raise KiwiServerTerminatedConnection('server closed the connection cleanly')
-        except ConnectionTerminatedException:
-                raise KiwiServerTerminatedConnection('server closed the connection unexpectedly')
-
-        self._process_ws_message(received)
+        if self._reader:
+            try:
+                received = self._stream.receive_message()
+                if received is None:
+                    self._socket.close()
+                    raise KiwiServerTerminatedConnection('server closed the connection cleanly')
+            except ConnectionTerminatedException:
+                    logging.debug('ConnectionTerminatedException')
+                    raise KiwiServerTerminatedConnection('server closed the connection unexpectedly')
+    
+            self._process_ws_message(received)
+        else:
+            msg = self._writer_message();
+            self._stream.send_message(msg)
+        
         tlimit = self._options.tlimit
         if tlimit != None and self._start_time != None and time.time() - self._start_time > tlimit:
             raise KiwiTimeLimitError('time limit reached')

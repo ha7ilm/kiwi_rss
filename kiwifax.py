@@ -306,6 +306,10 @@ class KiwiFax(kiwiclient.KiwiSDRStream):
     def __init__(self, options):
         super(KiwiFax, self).__init__()
         self._options = options
+        self._reader = True;
+        self._options.idx = 0;
+        self._type = 'SND'
+
         self._ioc = options.ioc
         self._lpm = options.lpm
 
@@ -654,6 +658,9 @@ def main():
     parser.add_option('-p', '--server-port', '--server_port',
                       dest='server_port', type='int',
                       default=8073, help='server port (default 8073)')
+    parser.add_option('--pw', '--password',
+                      dest='password', type='string', default='',
+                      help='Kiwi login password (if required)')
     parser.add_option('-q', '--iq',
                       dest='iq_mode',
                       action='store_true', default=False,
@@ -707,8 +714,13 @@ def main():
                       dest='iq_stream',
                       action='store_true', default=False,
                       help='EXPERIMENTAL: use IQ stream instead of audio')
+    parser.add_option('--tlimit', '--time-limit',
+                      dest='tlimit',
+                      type='float', default=None,
+                      help='Record time limit in seconds')
 
     (options, unused_args) = parser.parse_args()
+    options.tstamp = int(time.time() + os.getpid()) & 0xffffffff;
 
     # Setup logging
     fmtr = logging.Formatter('%(asctime)s %(levelname)s: %(message)s', '%Y%m%dT%H%MZ')
@@ -721,6 +733,7 @@ def main():
     ch.setFormatter(fmtr)
     rootLogger = logging.getLogger()
     rootLogger.setLevel(logging.INFO)
+    #rootLogger.setLevel(logging.DEBUG)
     rootLogger.addHandler(fh)
     rootLogger.addHandler(ch)
 
@@ -743,6 +756,7 @@ def main():
         # Connect
         try:
             recorder.connect(options.server_host, options.server_port)
+            recorder.open()
         except KeyboardInterrupt:
             break
         except Exception as e:
@@ -752,7 +766,8 @@ def main():
             continue
         # Record
         try:
-            recorder.run()
+            while True:
+              recorder.run()
             break
         except (kiwiclient.KiwiTooBusyError, kiwiclient.KiwiBadPasswordError):
             print "Server too busy now, sleeping and reconnecting"
@@ -761,6 +776,7 @@ def main():
         except Exception as e:
             traceback.print_exc()
             break
+    recorder.close()
     print "exiting"
 
 
