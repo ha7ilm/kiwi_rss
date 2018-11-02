@@ -100,6 +100,7 @@ print "Data stream active..."
 
 
 # send a sequence of messages to the server, hardcoded for now
+# max wf speed, no compression
 msg_list = ['SET auth t=kiwi p=', 'SET zoom=%d start=%d'%(zoom,offset),\
 'SET maxdb=0 mindb=-100', 'SET wf_speed=4', 'SET wf_comp=0']
 for msg in msg_list:
@@ -118,17 +119,21 @@ while time<length:
         tmp = tmp[16:] # remove some header from each msg
         if options['verbosity']:
             print time,
-        spectrum = np.array(struct.unpack('%dB'%len(tmp), tmp) ) # convert from binary data to uint8
+        #spectrum = np.array(struct.unpack('%dB'%len(tmp), tmp) ) # convert from binary data to uint8
+        spectrum = np.ndarray(len(tmp), dtype='B', buffer=tmp) # convert from binary data to uint8
         if filename:
             binary_wf_list.append(tmp) # append binary data to be saved to file
-        wf_data[time, :] = spectrum-255 # mirror dBs
+        #wf_data[time, :] = spectrum-255 # mirror dBs
+        wf_data[time, :] = spectrum
+        wf_data[time, :] = -(255 - wf_data[time, :])  # dBm
+        wf_data[time, :] = wf_data[time, :] - 13  # typical Kiwi wf cal
         time += 1
     else: # this is chatter between client and server
         #print tmp
         pass
 
 try:
-    mystream.close_connection()
+    mystream.close_connection(mod_pywebsocket.common.STATUS_GOING_AWAY)
     mysocket.close()
 except Exception as e:
     print "exception: %s" % e
@@ -143,8 +148,8 @@ print "Average SNR computation..."
 print "Waterfall with %d bins: median= %f dB, p95= %f dB - SNR= %f rbw= %f kHz" % (bins, median, p95,p95-median, rbw)
 
 
-print "Saving binary data to file..."
 if filename:
+    print "Saving binary data to file..."
     with open(filename, "wb") as fd:
     	fd.write(header_bin) # write the header info at the top
         for line in binary_wf_list:
