@@ -49,7 +49,7 @@ It provides the following methods which can be used in derived classes:
 ### kiwirecorder.py configuration
 * Use the option `-m iq --kiwi-wav --station=[name]` for recording IQ samples with GNSS time stamps.
 * The resulting .wav files contains non-standard WAV chunks with GNSS timestamps.
-* If a directory with name `gnss_pos/` exists, a text file `gnss_pos/[name].txt` will be created which contains latitude and longitude as provided by the KiwiSDR; existing files are overvritten.
+* If a directory with name `gnss_pos/` exists, a text file `gnss_pos/[name].txt` will be created which contains latitude and longitude as provided by the KiwiSDR; existing files are overwritten.
 
 ### Working with the recorded .wav files
 * There is an octave extension for reading such WAV files, see `read_kiwi_wav.cc` where the details of the non-standard WAV chunk can be found; it needs to be compiled in this way `mkoctfile read_kiwi_wav.cc`.
