@@ -3,7 +3,13 @@
 
 import array, logging, os, struct, sys, time, copy, threading, os
 import gc
+import math
 import numpy as np
+
+# no scipy.signal.resample_poly in any of the releases available for Python 2.7?
+# used numpy.interp instead
+#import scipy
+#import scipy.signal as sig
 
 from copy import copy
 from traceback import print_exc
@@ -20,6 +26,26 @@ def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     if not is_kiwi_wav:
         fp.write(struct.pack('<4sI', b'data', filesize - 12 - 8 - 16 - 8))
 
+#def _resample_setup(fs, fsn):
+#    found_up = None
+#    found_down = None
+#    target_rem = 0.01
+#    last_rem = 1
+#    for up in range(1, 102401):
+#        down = (fs * up) / fsn
+#        down_rem = abs(down - math.floor(down))
+#        if down_rem == 0:
+#            found_up = up;
+#            found_down = down;
+#            break
+#        else:
+#            if down_rem <= target_rem and down_rem < last_rem:
+#                last_rem = down_rem;
+#                found_up = up;
+#                found_down = down;
+#    if found_up != None:
+#        logging.info("resample: fs=%f fsn=%d up=%d down=%d rem=%f" % (fs, fsn, found_up, found_down, last_rem))
+#    return found_up, found_down
 
 class RingBuffer(object):
     def __init__(self, len):
@@ -87,6 +113,9 @@ class KiwiSoundRecorder(KiwiSDRStream):
         self._squelch = Squelch(self._options) if options.thresh is not None else None
         self._num_channels = 2 if options.modulation == 'iq' else 1
         self._last_gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], [0,0,0,0]))
+        #print(scipy.__version__)
+        #print(scipy.signal.resample_poly)
+        #sys.exit(0)
 
     def _setup_rx_params(self):
         self.set_name(self._options.user)
@@ -104,6 +133,12 @@ class KiwiSoundRecorder(KiwiSDRStream):
         if self._options.compression is False:
             self._set_snd_comp(False)
         self.set_inactivity_timeout(0)
+        self._output_sample_rate = self._sample_rate
+        if self._options.resample != 0:
+            #self._interp_up, self._decim_down = _resample_setup(self._sample_rate, self._options.resample)
+            #if self._interp_up != None:
+            #    self._output_sample_rate = self._options.resample
+            self._output_sample_rate = self._options.resample
 
     def _process_audio_samples(self, seq, samples, rssi):
         if self._options.quiet is False:
@@ -115,6 +150,17 @@ class KiwiSoundRecorder(KiwiSDRStream):
                 self._start_ts = None
                 self._start_time = None
                 return
+        if self._options.resample != 0:
+            #sig.resample_poly(samples, self._interp_up, self._decim_down)
+            fs = self._sample_rate
+            fsn = self._output_sample_rate
+            fsr = fs/fsn
+            x = samples
+            n = len(x)
+            xa = fsr*np.arange(round(n*fsn/fs))
+            xp = np.arange(len(x))
+            samples = np.interp(xa,xp,x).astype(np.int16)
+            #print ' resample_interp: fs=%.0f fsn=%.0f fsr=%f n=%d Lxa=%d Lxp=%d Lx=%d samples=%d' % (fs, fsn, fsr, n, len(xa), len(xp), len(x), len(samples))
         self._write_samples(samples, {})
 
     def _process_iq_samples(self, seq, samples, rssi, gps):
@@ -130,6 +176,17 @@ class KiwiSoundRecorder(KiwiSDRStream):
         s = array.array('h')
         for x in [[y.real, y.imag] for y in samples]:
             s.extend(map(int, x))
+        if self._options.resample != 0:
+            #sig.resample_poly(s, self._interp_up, self._decim_down)
+            fs = self._sample_rate
+            fsn = self._output_sample_rate
+            fsr = fs/fsn
+            x = s
+            n = len(x)
+            xa = fsr*np.arange(round(n*fsn/fs))
+            xp = np.arange(len(x))
+            s = np.interp(xa,xp,x).astype(np.int16)
+            #print ' resample_interp: fs=%.0f fsn=%.0f fsr=%f n=%d Lxa=%d Lxp=%d Lx=%d s=%d' % (fs, fsn, fsr, n, len(xa), len(xp), len(x), len(s))
         self._write_samples(s, gps)
 
         # no GPS or no recent GPS solution
@@ -162,7 +219,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
 
             # fp.tell() sometimes returns zero. _write_wav_header writes filesize - 8
             if filesize >= 8:
-                _write_wav_header(fp, filesize, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
+                _write_wav_header(fp, filesize, int(self._output_sample_rate), self._num_channels, self._options.is_kiwi_wav)
 
     def _write_samples(self, samples, *args):
         """Output to a file on the disk."""
@@ -175,7 +232,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
             self._start_time = time.time()
             # Write a static WAV header
             with open(self._get_output_filename(), 'wb') as fp:
-                _write_wav_header(fp, 100, int(self._sample_rate), self._num_channels, self._options.is_kiwi_wav)
+                _write_wav_header(fp, 100, int(self._output_sample_rate), self._num_channels, self._options.is_kiwi_wav)
             if self._options.is_kiwi_tdoa:
                 # NB: MUST be a print (i.e. not a logging.info)
                 print("file=%d %s" % (self._options.idx, self._get_output_filename()))
@@ -377,6 +434,10 @@ def main():
                       default=False,
                       action='store_true',
                       help='Use wav file format including KIWI header (GPS time-stamps) only for IQ mode')
+    parser.add_option('-r', '--resample',
+                      dest='resample',
+                      type='int', default=0,
+                      help='Resample output file to new sample rate in Hz')
     parser.add_option('--kiwi-tdoa',
                       dest='is_kiwi_tdoa',
                       default=False,

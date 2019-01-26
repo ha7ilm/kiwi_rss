@@ -92,18 +92,28 @@ two:
 # Should playback using standard .wav file player
 
 HOST_REAL = $(HOST)
-HOST_TDOA = $(HOST)
 H = $(HOST)
 
 real:
-	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000
+	python kiwirecorder.py -s $(HOST_REAL) -f 1521 -L -5000 -H 5000 --tlimit=10
+resample:
+	python kiwirecorder.py -s $(HOST_REAL) -f 346 -L -5000 -H 5000 -r 6000 --tlimit=10
+resample_iq:
+	python kiwirecorder.py -s $(HOST_REAL) -f 346 -m iq -L -5000 -H 5000 -r 6000 --tlimit=10
 ncomp:
 	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000 --ncomp
-tdoa:
-	python -u kiwirecorder.py -s $(HOST_TDOA) -f 1440 -m iq -L -5000 -H 5000 --kiwi-wav --kiwi-tdoa --tlimit=10 -u krec-TDoA
 rx8:
 #	python kiwirecorder.py -s $H,$H,$H,$H,$H,$H,$H,$H -f 1440 -L -5000 -H 5000 --launch-delay=15 --socket-timeout=120 -u krec-RX8
 	python kiwirecorder.py -s $H,$H,$H,$H,$H,$H,$H,$H -f 1440 -L -5000 -H 5000 -u krec-RX8
+
+
+# TDoA debugging
+
+HOST_TDOA = $(HOST)
+#HOST_TDOA = ka7ezo.proxy.kiwisdr.com
+
+tdoa:
+	python -u kiwirecorder.py -s $(HOST_TDOA) -f 1440 -m iq -L -5000 -H 5000 --kiwi-wav --kiwi-tdoa --tlimit=30 -u krec-TDoA
 
 
 # test reported crash situations
@@ -160,6 +170,15 @@ wf:
 
 micro:
 	python microkiwi_waterfall.py -s $(HOST_WF) -z 0 -o 0
+
+
+# stream a Kiwi connection in a "netcat" style fashion (not working yet)
+
+nc:
+	mkfifo /tmp/si /tmp/so
+	nc -l localhost 1234 >/tmp/si </tmp/so &
+	ssh -f -4 -p 1234 -L 2345:localhost:8073 root@$(HOST) sleep 600 &
+	python kiwinc.py -s $(HOST) -p 8073 --log debug </tmp/si >/tmp/so
 
 
 help h:
