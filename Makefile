@@ -172,13 +172,18 @@ micro:
 	python microkiwi_waterfall.py -s $(HOST_WF) -z 0 -o 0
 
 
-# stream a Kiwi connection in a "netcat" style fashion (not working yet)
+# stream a Kiwi connection in a "netcat" style fashion
+
+HOST_NC = $(HOST)
 
 nc:
+	python kiwi_nc.py -s $(HOST_NC) -f 1440 -m am -L -5000 -H 5000 -p 8073 --progress
+
+tun:
 	mkfifo /tmp/si /tmp/so
 	nc -l localhost 1234 >/tmp/si </tmp/so &
 	ssh -f -4 -p 1234 -L 2345:localhost:8073 root@$(HOST) sleep 600 &
-	python kiwinc.py -s $(HOST) -p 8073 --log debug </tmp/si >/tmp/so
+	python kiwi_nc.py -s $(HOST) -p 8073 --log debug --admin </tmp/si >/tmp/so
 
 
 help h:

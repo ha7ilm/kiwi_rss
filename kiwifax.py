@@ -721,6 +721,7 @@ def main():
 
     (options, unused_args) = parser.parse_args()
     options.tstamp = int(time.time() + os.getpid()) & 0xffffffff;
+    options.raw = False;
 
     # Setup logging
     fmtr = logging.Formatter('%(asctime)s %(levelname)s: %(message)s', '%Y%m%dT%H%MZ')

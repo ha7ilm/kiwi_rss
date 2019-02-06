@@ -301,24 +301,34 @@ class KiwiSDRStream(KiwiSDRStreamBase):
         if self._modulation == 'iq':
             gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], struct.unpack('<BBII', buffer(data[0:10]))))
             data = data[10:]
-            count = len(data) // 2
-            samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.float32)
-            cs      = np.ndarray(count//2, dtype=np.complex64)
-            cs.real = samples[0:count:2]
-            cs.imag = samples[1:count:2]
-            self._process_iq_samples(seq, cs, rssi, gps)
-        else:
-            if self._compression:
-                samples = self._decoder.decode(data)
+            if self._options.raw is True:
+                self._process_iq_samples_raw_raw(seq, data)
             else:
                 count = len(data) // 2
-                samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.int16)
-            self._process_audio_samples(seq, samples, rssi)
+                samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.float32)
+                cs      = np.ndarray(count//2, dtype=np.complex64)
+                cs.real = samples[0:count:2]
+                cs.imag = samples[1:count:2]
+                self._process_iq_samples(seq, cs, rssi, gps)
+        else:
+            if self._options.raw is True:
+                if self._compression:
+                    data = self._decoder.decode(data)
+                self._process_audio_samples_raw(seq, data, rssi)
+            else:
+                if self._compression:
+                    samples = self._decoder.decode(data)
+                else:
+                    count = len(data) // 2
+                    samples = np.ndarray(count, dtype='>h', buffer=data).astype(np.int16)
+                self._process_audio_samples(seq, samples, rssi)
 
     def _process_wf(self, body):
         x_bin_server,flags_x_zoom_server,seq, = struct.unpack('<III', buffer(body[0:12]))
         data = body[12:]
         logging.info("W/F seq %d len %d" % (seq, len(data)))
+        if self._options.raw is True:
+            return self._process_waterfall_samples_raw(data, seq)
         if self._compression:
             self._decoder.__init__()   # reset decoder each sample
             samples = self._decoder.decode(data)
