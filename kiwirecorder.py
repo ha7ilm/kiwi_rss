@@ -495,6 +495,7 @@ def main():
     run_event = threading.Event()
     run_event.set()
 
+    options.raw = False;
     gopt = options
     multiple_connections,options = options_cross_product(options)
 
