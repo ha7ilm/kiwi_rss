@@ -5,17 +5,20 @@ import array, logging, os, struct, sys, time, copy, threading, os
 import gc
 import math
 import numpy as np
-
-# no scipy.signal.resample_poly in any of the releases available for Python 2.7?
-# used numpy.interp instead
-#import scipy
-#import scipy.signal as sig
-
 from copy import copy
 from traceback import print_exc
 from kiwiclient import KiwiSDRStream
 from kiwiworker import KiwiWorker
 from optparse import OptionParser
+
+HAS_RESAMPLER = True
+try:
+    ## if available use libsamplerate for resampling
+    from samplerate import Resampler
+except ImportError:
+    ## otherwise linear interpolation is used
+    HAS_RESAMPLER = False
+
 
 def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     fp.write(struct.pack('<4sI4s', b'RIFF', filesize - 8, b'WAVE'))
@@ -26,30 +29,9 @@ def _write_wav_header(fp, filesize, samplerate, num_channels, is_kiwi_wav):
     if not is_kiwi_wav:
         fp.write(struct.pack('<4sI', b'data', filesize - 12 - 8 - 16 - 8))
 
-#def _resample_setup(fs, fsn):
-#    found_up = None
-#    found_down = None
-#    target_rem = 0.01
-#    last_rem = 1
-#    for up in range(1, 102401):
-#        down = (fs * up) / fsn
-#        down_rem = abs(down - math.floor(down))
-#        if down_rem == 0:
-#            found_up = up;
-#            found_down = down;
-#            break
-#        else:
-#            if down_rem <= target_rem and down_rem < last_rem:
-#                last_rem = down_rem;
-#                found_up = up;
-#                found_down = down;
-#    if found_up != None:
-#        logging.info("resample: fs=%f fsn=%d up=%d down=%d rem=%f" % (fs, fsn, found_up, found_down, last_rem))
-#    return found_up, found_down
-
 class RingBuffer(object):
     def __init__(self, len):
-        self._array = np.zeros(65, dtype='float')
+        self._array = np.zeros(len, dtype='float')
         self._index = 0
         self._is_filled = False
 
@@ -113,9 +95,7 @@ class KiwiSoundRecorder(KiwiSDRStream):
         self._squelch = Squelch(self._options) if options.thresh is not None else None
         self._num_channels = 2 if options.modulation == 'iq' else 1
         self._last_gps = dict(zip(['last_gps_solution', 'dummy', 'gpssec', 'gpsnsec'], [0,0,0,0]))
-        #print(scipy.__version__)
-        #print(scipy.signal.resample_poly)
-        #sys.exit(0)
+        self._resampler = None
 
     def _setup_rx_params(self):
         self.set_name(self._options.user)
@@ -134,11 +114,13 @@ class KiwiSoundRecorder(KiwiSDRStream):
             self._set_snd_comp(False)
         self.set_inactivity_timeout(0)
         self._output_sample_rate = self._sample_rate
-        if self._options.resample != 0:
-            #self._interp_up, self._decim_down = _resample_setup(self._sample_rate, self._options.resample)
-            #if self._interp_up != None:
-            #    self._output_sample_rate = self._options.resample
+        if self._options.resample > 0:
             self._output_sample_rate = self._options.resample
+            self._ratio = float(self._output_sample_rate)/self._sample_rate
+            logging.info('resampling from %g to %d Hz (ratio=%f)' % (self._sample_rate, self._options.resample, self._ratio))
+            if not HAS_RESAMPLER:
+                logging.info("libsamplerate not available: linear interpolation is used for low-quality resampling. "
+                             "(pip install samplerate)")
 
     def _process_audio_samples(self, seq, samples, rssi):
         if self._options.quiet is False:
@@ -150,17 +132,20 @@ class KiwiSoundRecorder(KiwiSDRStream):
                 self._start_ts = None
                 self._start_time = None
                 return
-        if self._options.resample != 0:
-            #sig.resample_poly(samples, self._interp_up, self._decim_down)
-            fs = self._sample_rate
-            fsn = self._output_sample_rate
-            fsr = fs/fsn
-            x = samples
-            n = len(x)
-            xa = fsr*np.arange(round(n*fsn/fs))
-            xp = np.arange(len(x))
-            samples = np.interp(xa,xp,x).astype(np.int16)
-            #print ' resample_interp: fs=%.0f fsn=%.0f fsr=%f n=%d Lxa=%d Lxp=%d Lx=%d samples=%d' % (fs, fsn, fsr, n, len(xa), len(xp), len(x), len(samples))
+
+        if self._options.resample > 0:
+            if HAS_RESAMPLER:
+                ## libsamplerate resampling
+                if self._resampler is None:
+                    self._resampler = Resampler(converter_type='sinc_best')
+                samples = np.round(self._resampler.process(samples, ratio=self._ratio)).astype(np.int16)
+            else:
+                ## resampling by linear interpolation
+                n  = len(samples)
+                xa = np.arange(round(n*self._ratio))/self._ratio
+                xp = np.arange(n)
+                samples = np.round(np.interp(xa,xp,samples)).astype(np.int16)
+
         self._write_samples(samples, {})
 
     def _process_iq_samples(self, seq, samples, rssi, gps):
@@ -173,20 +158,26 @@ class KiwiSoundRecorder(KiwiSDRStream):
         ##print gps['gpsnsec']-self._last_gps['gpsnsec']
         self._last_gps = gps
         ## convert list of complex numbers into an array
-        s = array.array('h')
-        for x in [[y.real, y.imag] for y in samples]:
-            s.extend(map(int, x))
-        if self._options.resample != 0:
-            #sig.resample_poly(s, self._interp_up, self._decim_down)
-            fs = self._sample_rate
-            fsn = self._output_sample_rate
-            fsr = fs/fsn
-            x = s
-            n = len(x)
-            xa = fsr*np.arange(round(n*fsn/fs))
-            xp = np.arange(len(x))
-            s = np.interp(xa,xp,x).astype(np.int16)
-            #print ' resample_interp: fs=%.0f fsn=%.0f fsr=%f n=%d Lxa=%d Lxp=%d Lx=%d s=%d' % (fs, fsn, fsr, n, len(xa), len(xp), len(x), len(s))
+        s = np.zeros(2*len(samples), dtype=np.int16)
+        s[0::2] = np.real(samples).astype(np.int16)
+        s[1::2] = np.imag(samples).astype(np.int16)
+        if self._options.resample > 0:
+            if HAS_RESAMPLER:
+                ## libsamplerate resampling
+                if self._resampler is None:
+                    self._resampler = Resampler(channels=2, converter_type='sinc_best')
+                s = self._resampler.process(s.reshape(len(samples),2), ratio=self._ratio)
+                s = np.round(s.reshape(1, np.size(s))).astype(np.int16)
+            else:
+                ## resampling by linear interpolation
+                n  = len(samples)
+                m  = int(round(n*self._ratio))
+                xa = np.arange(m)/self._ratio
+                xp = np.arange(n)
+                s  = np.zeros(2*m, dtype=np.int16)
+                s[0::2] = np.round(np.interp(xa,xp,np.real(samples))).astype(np.int16)
+                s[1::2] = np.round(np.interp(xa,xp,np.imag(samples))).astype(np.int16)
+
         self._write_samples(s, gps)
 
         # no GPS or no recent GPS solution
@@ -437,7 +428,7 @@ def main():
     parser.add_option('-r', '--resample',
                       dest='resample',
                       type='int', default=0,
-                      help='Resample output file to new sample rate in Hz')
+                      help='Resample output file to new sample rate in Hz. The resampling ratio has to be in the range [1/256,256]')
     parser.add_option('--kiwi-tdoa',
                       dest='is_kiwi_tdoa',
                       default=False,
