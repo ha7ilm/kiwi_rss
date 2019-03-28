@@ -95,11 +95,11 @@ HOST_REAL = $(HOST)
 H = $(HOST)
 
 real:
-	python kiwirecorder.py -s $(HOST_REAL) -f 1521 -L -5000 -H 5000 --tlimit=10
+	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000 --tlimit=10
 resample:
-	python kiwirecorder.py -s $(HOST_REAL) -f 346 -L -5000 -H 5000 -r 6000 --tlimit=10
+	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000 -r 6000 --tlimit=10
 resample_iq:
-	python kiwirecorder.py -s $(HOST_REAL) -f 346 -m iq -L -5000 -H 5000 -r 6000 --tlimit=10
+	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -m iq -L -5000 -H 5000 -r 6000 --tlimit=10
 ncomp:
 	python kiwirecorder.py -s $(HOST_REAL) -f 1440 -L -5000 -H 5000 --ncomp
 rx8:
@@ -159,6 +159,8 @@ HOST_IQ = $(HOST)
 
 iq:
 	python kiwirecorder.py -s $(HOST_IQ) -f 1440 -m iq -L -5000 -H 5000
+tg:
+	python kiwirecorder.py -s $(HOST_IQ) -f 346 -m iq -L -1050 -H 1050
 
 
 # process waterfall data
