@@ -140,10 +140,18 @@ while True:
         plt.draw()
         plt.pause(0.01)
 
-        rss_wf_data=-wf_data[512:]
+        rss_wf_data=wf_data[512:]
+        #rss_wf_data=4095+rss_wf_data
+        #rss_wf_data=4096*(10**((rss_wf_data+80)/20))
+        rss_wf_data=(rss_wf_data+120)*(4096/60.)
+        for key in range(len(rss_wf_data)):
+            if rss_wf_data[key] > 4095: rss_wf_data[key] = 4095
+            elif rss_wf_data[key] < 0: rss_wf_data[key] = 0
+        print rss_wf_data
+
         #send it to RSS
         if rss_conn:
-            rss_conn.send(struct.pack("<%dH"%rss_wf_data.size, *rss_wf_data)+"\xfe\xfe")
+            rss_conn.send(struct.pack(">%dH"%rss_wf_data.size, *rss_wf_data)+"\xfe\xfe")
 
     else: # this is chatter between client and server
         #print tmp
