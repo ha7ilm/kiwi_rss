@@ -74,7 +74,7 @@ if not options['no-listen']:
     print "Waiting for RSS to connect on TCP port 8888..."
     rss_conn, rss_addr = rss_socket.accept()
     print "RSS connected from address: ", rss_addr
-    cmd = "F %d|S %d|O %d|C 1|"%(1.5*center_freq*1e3, 0.5*full_span*1e3, 0.5*full_span*1e3)
+    cmd = "F %d|S %d|O %d|C 512|\r\n"%(1.5*center_freq*1e3, 0.5*full_span*1e3, 0.5*full_span*1e3)
     print "Sending command:\n"+cmd
     rss_conn.send(cmd)
 
