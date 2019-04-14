@@ -8,7 +8,8 @@ import logging
 import socket
 import struct
 import time
-import matplotlib.pyplot as plt
+try: import matplotlib.pyplot as plt
+except: plt = False
 from datetime import datetime
 
 import wsclient
@@ -74,7 +75,7 @@ if not options['no-listen']:
     print "Waiting for RSS to connect on TCP port 8888..."
     rss_conn, rss_addr = rss_socket.accept()
     print "RSS connected from address: ", rss_addr
-    cmd = "F %d|S %d|O %d|C 512|\r\n"%(1.5*center_freq*1e3, 0.5*full_span*1e3, 0.5*full_span*1e3)
+    cmd = "F %d|S %d|O %d|C 512|\r\n"%(1.5*center_freq*1e3, 0.5*full_span*1e3, 0)
     print "Sending command:\n"+cmd
     rss_conn.send(cmd)
 
@@ -116,10 +117,11 @@ print "Starting to retrieve waterfall data..."
 # number of samples to draw from server
 # create a numpy array to contain the waterfall data
 wf_data = np.zeros(bins)
-plt.figure()
-plt.grid(True)
-plt.ion()
-plt.show()
+if plt:
+    plt.figure()
+    plt.grid(True)
+    plt.ion()
+    plt.show()
 
 while True:
     # receive one msg from server
@@ -133,12 +135,13 @@ while True:
         wf_data[:] = spectrum
         wf_data[:] = -(255 - wf_data[:])  # dBm
         wf_data[:] = wf_data[:] - 13  # typical Kiwi wf cal
-        print wf_data
-        plt.clf()
-        #plt.semilogy(np.linspace(0, 30e6, len(wf_data)), wf_data)
-        plt.plot(wf_data)
-        plt.draw()
-        plt.pause(0.01)
+        #print wf_data
+        if plt:
+            plt.clf()
+            #plt.semilogy(np.linspace(0, 30e6, len(wf_data)), wf_data)
+            plt.plot(wf_data)
+            plt.draw()
+            plt.pause(0.01)
 
         rss_wf_data=wf_data[512:]
         #rss_wf_data=4095+rss_wf_data
@@ -147,7 +150,7 @@ while True:
         for key in range(len(rss_wf_data)):
             if rss_wf_data[key] > 4095: rss_wf_data[key] = 4095
             elif rss_wf_data[key] < 0: rss_wf_data[key] = 0
-        print rss_wf_data
+        #print rss_wf_data
 
         #send it to RSS
         if rss_conn:
