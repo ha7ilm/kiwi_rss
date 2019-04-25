@@ -4,6 +4,7 @@ import numpy as np
 import struct
 
 import array
+import sys
 import logging
 import socket
 import struct
@@ -79,10 +80,6 @@ if not options['no-listen']:
     print "Sending command:\n"+cmd
     rss_conn.send(cmd)
 
-now = str(datetime.now())
-header = [center_freq, span, now]
-header_bin = struct.pack("II26s", *header)
-
 print "Trying to contact server..."
 try:
     mysocket = socket.socket()
@@ -123,7 +120,13 @@ if plt:
     plt.ion()
     plt.show()
 
+last_keepalive = 0
+
 while True:
+    sys.stdout.write("O")
+    if time.time()-last_keepalive > 3:
+        mystream.send_message("SET keepalive")
+        last_keepalive = time.time()
     # receive one msg from server
     tmp = mystream.receive_message()
     if tmp and "W/F" in tmp: # this is one waterfall line
