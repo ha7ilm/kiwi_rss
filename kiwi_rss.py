@@ -123,6 +123,7 @@ if plt:
 last_keepalive = 0
 
 while True:
+    time.sleep(1)
     sys.stdout.write("O")
     if time.time()-last_keepalive > 3:
         mystream.send_message("SET keepalive")
