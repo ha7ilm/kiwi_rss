@@ -2,15 +2,14 @@
 
 import numpy as np
 import struct
-
+import Queue
 import array
+import threading
 import sys
 import logging
 import socket
-import struct
 import time
-try: import matplotlib.pyplot as plt
-except: plt = False
+import signal
 from datetime import datetime
 
 import wsclient
@@ -20,6 +19,19 @@ from mod_pywebsocket.stream import Stream
 from mod_pywebsocket.stream import StreamOptions
 
 from optparse import OptionParser
+
+# https://stackoverflow.com/a/4205386
+
+def signal_handler(signal, frame):
+    print('You pressed Ctrl+C! Waiting for threads to finish...')
+    if rss_thread:
+        rss_queue.put(None)
+        rss_thread.join()
+    print('Threads finished.')
+    sys.exit(0)
+
+rss_thread = None
+signal.signal(signal.SIGINT, signal_handler)
 
 parser = OptionParser()
 parser.add_option("-s", "--server", type=str,
@@ -34,8 +46,15 @@ parser.add_option("-v", "--verbose", type=int,
                   help="whether to print progress and debug info", dest="verbosity", default=0)
 parser.add_option("-n", "--no-listen", action="store_true",
                   help="whether to disable listening for RSS", dest="no-listen", default=False)
+parser.add_option("-w", "--plot-waterfall", action="store_true",
+                  help="whether to plot the waterfall data using matplotlib", dest="plot-waterfall", default=False)
 
 options = vars(parser.parse_args()[0])
+
+plt = False
+if options["plot-waterfall"]:
+    try: import matplotlib.pyplot as plt
+    except: pass
 
 host = options['server']
 port = options['port']
@@ -68,8 +87,7 @@ print span, offset
 center_freq = span/2+offset_khz
 print "Center frequency: %.3f MHz" % (center_freq/1000)
 
-rss_conn = None
-if not options['no-listen']:
+def rss_worker():
     rss_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     rss_socket.bind(("127.0.0.1", 8888)) 
     rss_socket.listen(100)
@@ -79,6 +97,23 @@ if not options['no-listen']:
     cmd = "F %d|S %d|O %d|C 512|\r\n"%(1.5*center_freq*1e3, 0.5*full_span*1e3, 0)
     print "Sending command:\n"+cmd
     rss_conn.send(cmd)
+    while True:
+        rss_queue_item = rss_queue.get()
+        if rss_queue_item is None: break
+        try:
+            rss_conn.send(rss_queue_item)
+        except: break
+        #print "Pushed to RSS"
+    print "RSS thread finished"
+    rss_thread_finished[0] = True
+
+rss_enable = not options['no-listen']
+rss_queue = Queue.Queue()
+rss_thread_finished = [False]
+if rss_enable:
+    rss_thread = threading.Thread(target=rss_worker)
+    rss_thread.start()
+
 
 print "Trying to contact server..."
 try:
@@ -123,9 +158,8 @@ if plt:
 last_keepalive = 0
 
 while True:
-    time.sleep(1)
-    sys.stdout.write("O")
-    if time.time()-last_keepalive > 3:
+    #sys.stdout.write("O")
+    if time.time()-last_keepalive > 1:
         mystream.send_message("SET keepalive")
         last_keepalive = time.time()
     # receive one msg from server
@@ -156,9 +190,10 @@ while True:
             elif rss_wf_data[key] < 0: rss_wf_data[key] = 0
         #print rss_wf_data
 
-        #send it to RSS
-        if rss_conn:
-            rss_conn.send(struct.pack(">%dH"%rss_wf_data.size, *rss_wf_data)+"\xfe\xfe")
+        if rss_enable: 
+            rss_queue.put(struct.pack(">%dH"%rss_wf_data.size, *rss_wf_data)+"\xfe\xfe")
+            #if qsize>0: print "qsize:", rss_queue.qsize()
+            if rss_thread_finished[0]: break
 
     else: # this is chatter between client and server
         #print tmp
