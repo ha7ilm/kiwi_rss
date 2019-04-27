@@ -189,6 +189,7 @@ while True:
             if rss_wf_data[key] > 4095: rss_wf_data[key] = 4095
             elif rss_wf_data[key] < 0: rss_wf_data[key] = 0
         #print rss_wf_data
+        rss_wf_data=np.flip(rss_wf_data)
 
         if rss_enable: 
             rss_queue.put(struct.pack(">%dH"%rss_wf_data.size, *rss_wf_data)+"\xfe\xfe")
