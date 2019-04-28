@@ -45,6 +45,7 @@ parser.add_option("-S", "--speed", type=int, help="waterfall speed", dest="speed
 parser.add_option("-v", "--verbose", type=int, help="whether to print progress and debug info", dest="verbosity", default=0)
 parser.add_option("-n", "--no-listen", action="store_true", help="whether to disable listening for RSS", dest="no-listen", default=False)
 parser.add_option("-w", "--plot-waterfall", action="store_true", help="whether to plot the waterfall data using matplotlib", dest="plot-waterfall", default=False)
+parser.add_option("-i", "--integrate", type=int, help="calculate the mean of every given number of FFT outputs", dest="integrate", default=1)
 parser.add_option("--waterfall-lower", action="store_true", 
         help="whether to use the lower part of the waterfall", dest="waterfall-lower", default=False)
 
@@ -150,6 +151,11 @@ Radiobutton(tk_root, text="Logarithmic scale", variable=log_enable, value=1).pac
 Radiobutton(tk_root, text="Linear scale", variable=log_enable, value=0).pack(anchor=W)
 Label(text="Y = Gain * (X + Offset)").pack(anchor=W)
 
+integrate_items = np.zeros((512,options["integrate"]))
+integrate_iter = 0
+assert options["integrate"]>0, "--integrate should be >0" 
+print "Integration:", options["integrate"]
+
 while True:
     tk_root.update_idletasks()
     tk_root.update()
@@ -196,9 +202,15 @@ while True:
         rss_wf_data=np.flip(rss_wf_data)
 
         if rss_enable: 
-            rss_queue.put(struct.pack(">%dH"%rss_wf_data.size, *rss_wf_data)+"\xfe\xfe")
-            qsize =  rss_queue.qsize()
-            if qsize>10: print "warning: rss transmit queue size =", qsize,"> 10"
+            integrate_items[:,integrate_iter] = rss_wf_data
+            integrate_iter += 1
+            if options["integrate"]<=integrate_iter:
+                integrate_iter = 0
+                rss_wf_output = np.mean(integrate_items, axis=1)
+                print "rss_wf_output size:", rss_wf_output.size, integrate_items.size
+                rss_queue.put(struct.pack(">%dH"%rss_wf_output.size, *rss_wf_output)+"\xfe\xfe")
+                qsize =  rss_queue.qsize()
+                if qsize>10: print "warning: rss transmit queue size =", qsize,"> 10"
             if rss_thread_finished[0]: break
 
     else: # this is chatter between client and server
