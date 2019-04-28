@@ -37,7 +37,10 @@ signal.signal(signal.SIGINT, signal_handler)
 parser = OptionParser()
 parser.add_option("-s", "--server", type=str, help="server name", dest="server", default='192.168.1.82')
 parser.add_option("-p", "--port", type=int, help="port number", dest="port", default=8073)
-#parser.add_option("-o", "--offset", type=int, help="start frequency in kHz", dest="start", default=0)
+parser.add_option("-o", "--offset", type=float, help="RSS data conversion: offset default value", dest="rss_offset", default=120)
+parser.add_option("-g", "--gain", type=float, help="RSS data conversion: gain default value", dest="rss_gain", default=1)
+parser.add_option("-l", "--linear", action="store_true", 
+        help="RSS data conversion: use linear mode (else logarithmic)", dest="linear", default=False)
 parser.add_option("-S", "--speed", type=int, help="waterfall speed", dest="speed", default=3)
 parser.add_option("-v", "--verbose", type=int, help="whether to print progress and debug info", dest="verbosity", default=0)
 parser.add_option("-n", "--no-listen", action="store_true", help="whether to disable listening for RSS", dest="no-listen", default=False)
@@ -136,13 +139,13 @@ last_keepalive = 0
 
 tk_root = Tk()
 tk_root.title("kiwi_rss.py")
-value_offset=DoubleVar(value=120)
-Scale(tk_root, from_=-50, to=200, variable=value_offset, label="Offset").pack(anchor=CENTER)
+rss_offset=DoubleVar(value=options["rss_offset"])
+Scale(tk_root, from_=-50, to=200, variable=rss_offset, label="Offset").pack(anchor=CENTER)
 
-value_mult=DoubleVar(value=1)
-Scale(tk_root, from_=0., to=3., variable=value_mult, label="Gain", resolution=0.1).pack(anchor=CENTER)
+rss_gain=DoubleVar(value=options["rss_gain"])
+Scale(tk_root, from_=0., to=3., variable=rss_gain, label="Gain", resolution=0.1).pack(anchor=CENTER)
 
-log_enable = IntVar(value=1)
+log_enable = IntVar(value=not options["linear"])
 Radiobutton(tk_root, text="Logarithmic scale", variable=log_enable, value=1).pack(anchor=W)
 Radiobutton(tk_root, text="Linear scale", variable=log_enable, value=0).pack(anchor=W)
 Label(text="Y = Gain * (X + Offset)").pack(anchor=W)
@@ -176,9 +179,9 @@ while True:
         rss_wf_data=wf_data[512:] if not options["waterfall-lower"] else wf_data[:511]
         #rss_wf_data=4095+rss_wf_data
         if log_enable.get()>0:
-            rss_wf_data=(rss_wf_data+value_offset.get())*(4096/60.)*value_mult.get()
+            rss_wf_data=(rss_wf_data+rss_offset.get())*(4096/60.)*rss_gain.get()
         else:
-            rss_wf_data=value_mult.get()*4096*(10**((rss_wf_data+value_offset.get())/20))
+            rss_wf_data=rss_gain.get()*4096*(10**((rss_wf_data+rss_offset.get())/20))
         rss_wf_too_high = 0
         rss_wf_too_low = 0
         for key in range(len(rss_wf_data)):
