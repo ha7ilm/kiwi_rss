@@ -42,7 +42,6 @@ parser.add_option("-g", "--gain", type=float, help="RSS data conversion: gain de
 parser.add_option("-l", "--linear", action="store_true", 
         help="RSS data conversion: use linear mode (else logarithmic)", dest="linear", default=False)
 parser.add_option("-S", "--speed", type=int, help="waterfall speed", dest="speed", default=3)
-parser.add_option("-v", "--verbose", type=int, help="whether to print progress and debug info", dest="verbosity", default=0)
 parser.add_option("-n", "--no-listen", action="store_true", help="whether to disable listening for RSS", dest="no-listen", default=False)
 parser.add_option("-w", "--plot-waterfall", action="store_true", help="whether to plot the waterfall data using matplotlib", dest="plot-waterfall", default=False)
 parser.add_option("-i", "--integrate", type=int, help="calculate the mean of every given number of FFT outputs", dest="integrate", default=1)
@@ -167,52 +166,46 @@ while True:
     tmp = mystream.receive_message()
     if tmp and "W/F" in tmp: # this is one waterfall line
         tmp = tmp[16:] # remove some header from each msg
-        if options['verbosity']:pass
         #spectrum = np.array(struct.unpack('%dB'%len(tmp), tmp) ) # convert from binary data to uint8
         spectrum = np.ndarray(len(tmp), dtype='B', buffer=tmp) # convert from binary data to uint8
         #wf_data[time, :] = spectrum-255 # mirror dBs
         wf_data[:] = spectrum
         wf_data[:] = -(255 - wf_data[:])  # dBm
         wf_data[:] = wf_data[:] - 13  # typical Kiwi wf cal
-        #print wf_data
         if plt:
             plt.clf()
             #plt.semilogy(np.linspace(0, 30e6, len(wf_data)), wf_data)
             plt.plot(wf_data)
             plt.draw()
             plt.pause(0.01)
-
-        rss_wf_data=wf_data[512:] if not options["waterfall-lower"] else wf_data[:511]
-        #rss_wf_data=4095+rss_wf_data
-        if log_enable.get()>0:
-            rss_wf_data=(rss_wf_data+rss_offset.get())*(4096/60.)*rss_gain.get()
-        else:
-            rss_wf_data=rss_gain.get()*4096*(10**((rss_wf_data+rss_offset.get())/20))
-        rss_wf_too_high = 0
-        rss_wf_too_low = 0
-        for key in range(len(rss_wf_data)):
-            if rss_wf_data[key] > 4095: 
-                rss_wf_data[key] = 4095
-                rss_wf_too_high += 1
-            elif rss_wf_data[key] < 0: 
-                rss_wf_data[key] = 0
-                rss_wf_too_low += 1
-        if rss_wf_too_high or rss_wf_too_low:
-            print "warning: values clamped, %d bin(s) above value 4095, %d bin(s) below value 0"%(rss_wf_too_high, rss_wf_too_low)
-        rss_wf_data=np.flip(rss_wf_data)
-
         if rss_enable: 
+            if rss_thread_finished[0]: break
+            rss_wf_data=wf_data[512:] if not options["waterfall-lower"] else wf_data[:511]
             integrate_items[:,integrate_iter] = rss_wf_data
             integrate_iter += 1
             if options["integrate"]<=integrate_iter:
                 integrate_iter = 0
                 rss_wf_output = np.mean(integrate_items, axis=1)
-                print "rss_wf_output size:", rss_wf_output.size, integrate_items.size
+                if log_enable.get()>0:
+                    rss_wf_output=(rss_wf_output+rss_offset.get())*(4096/60.)*rss_gain.get()
+                else:
+                    rss_wf_output=rss_gain.get()*4096*(10**((rss_wf_output+rss_offset.get())/20))
+                rss_wf_too_high = 0
+                rss_wf_too_low = 0
+                for key in range(len(rss_wf_output)):
+                    if rss_wf_output[key] > 4095: 
+                        rss_wf_output[key] = 4095
+                        rss_wf_too_high += 1
+                    elif rss_wf_output[key] < 0: 
+                        rss_wf_output[key] = 0
+                        rss_wf_too_low += 1
+                if rss_wf_too_high or rss_wf_too_low:
+                    print "warning: values clamped, %d bin(s) above value 4095, %d bin(s) below value 0"%(rss_wf_too_high, rss_wf_too_low)
+                rss_wf_output=np.flip(rss_wf_output)
+                #print "rss_wf_output size:", rss_wf_output.size, integrate_items.size
                 rss_queue.put(struct.pack(">%dH"%rss_wf_output.size, *rss_wf_output)+"\xfe\xfe")
                 qsize =  rss_queue.qsize()
                 if qsize>10: print "warning: rss transmit queue size =", qsize,"> 10"
-            if rss_thread_finished[0]: break
-
     else: # this is chatter between client and server
         #print tmp
         pass
