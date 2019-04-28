@@ -37,8 +37,7 @@ signal.signal(signal.SIGINT, signal_handler)
 parser = OptionParser()
 parser.add_option("-s", "--server", type=str, help="server name", dest="server", default='192.168.1.82')
 parser.add_option("-p", "--port", type=int, help="port number", dest="port", default=8073)
-parser.add_option("-z", "--zoom", type=int, help="zoom factor", dest="zoom", default=0)
-parser.add_option("-o", "--offset", type=int, help="start frequency in kHz", dest="start", default=0)
+#parser.add_option("-o", "--offset", type=int, help="start frequency in kHz", dest="start", default=0)
 parser.add_option("-S", "--speed", type=int, help="waterfall speed", dest="speed", default=3)
 parser.add_option("-v", "--verbose", type=int, help="whether to print progress and debug info", dest="verbosity", default=0)
 parser.add_option("-n", "--no-listen", action="store_true", help="whether to disable listening for RSS", dest="no-listen", default=False)
@@ -60,28 +59,9 @@ print "KiwiSDR Server: %s:%d" % (host,port)
 bins = 1024
 print "Number of waterfall bins: %d" % bins
 
-zoom = options['zoom']
-print "Zoom factor:", zoom
-
-offset_khz = options['start'] # this is offset in kHz
-
 full_span = 30000.0 # for a 30MHz kiwiSDR
-if zoom>0:
-    span = full_span / 2.**zoom
-else:
-	span = full_span
-
-rbw = span/bins
-if offset_khz>0:
-#	offset = (offset_khz-span/2)/(full_span/bins)*2**(zoom)*1000.
-	offset = (offset_khz+100)/(full_span/bins)*2**(4)*1000.
-	offset = max(0, offset)
-else:
-	offset = 0
-
-print span, offset
-
-center_freq = span/2+offset_khz
+rbw = full_span/bins
+center_freq = full_span/2
 print "Center frequency: %.3f MHz" % (center_freq/1000)
 
 def rss_worker():
@@ -138,7 +118,7 @@ print "Data stream active..."
 
 # send a sequence of messages to the server, hardcoded for now
 # max wf speed, no compression
-msg_list = ['SET auth t=kiwi p=', 'SET zoom=%d start=%d'%(zoom,offset),\
+msg_list = ['SET auth t=kiwi p=', 'SET zoom=%d start=%d'%(0,0),\
 'SET maxdb=0 mindb=-100', 'SET wf_speed=%d'%(options["speed"]), 'SET wf_comp=0']
 for msg in msg_list:
     mystream.send_message(msg)
