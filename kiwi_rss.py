@@ -67,29 +67,35 @@ rbw = full_span/bins
 center_freq = full_span/2
 print "Center frequency: %.3f MHz" % (center_freq/1000)
 
+
 def rss_worker():
     rss_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     rss_socket.bind(("127.0.0.1", 8888)) 
     rss_socket.listen(100)
-    print "Waiting for RSS to connect on TCP port 8888..."
-    rss_conn, rss_addr = rss_socket.accept()
-    print "RSS connected from address: ", rss_addr
-    cmd = "F %d|S %d|O %d|C 512|\r\n"%((0.5 if options["waterfall-lower"] else 1.5)*center_freq*1e3, 0.5*full_span*1e3, 0)
-    print "Sending command:\n"+cmd
-    rss_conn.send(cmd)
     while True:
-        rss_queue_item = rss_queue.get()
+        print "Waiting for RSS to connect on TCP port 8888..."
+        rss_conn, rss_addr = rss_socket.accept()
+        rss_accepted[0] = True
+        print "RSS connected from address: ", rss_addr
+        cmd = "F %d|S %d|O %d|C 512|\r\n"%((0.5 if options["waterfall-lower"] else 1.5)*center_freq*1e3, 0.5*full_span*1e3, 0)
+        print "Sending command:\n"+cmd
+        rss_conn.send(cmd)
+        while True:
+            rss_queue_item = rss_queue.get()
+            if rss_queue_item is None: break
+            try:
+                rss_conn.send(rss_queue_item)
+            except: break
+            #print "Pushed to RSS"
+        rss_accepted[0] = False
         if rss_queue_item is None: break
-        try:
-            rss_conn.send(rss_queue_item)
-        except: break
-        #print "Pushed to RSS"
     print "RSS thread finished"
     rss_thread_finished[0] = True
 
 rss_enable = not options['no-listen']
 rss_queue = Queue.Queue()
 rss_thread_finished = [False]
+rss_accepted = [False]
 if rss_enable:
     rss_thread = threading.Thread(target=rss_worker)
     rss_thread.start()
@@ -102,7 +108,6 @@ try:
 except:
     print "Failed to connect, sleeping and reconnecting"
     exit()   
-print "Socket open..."
 
 uri = '/%d/%s' % (int(time.time()), 'W/F')
 handshake = wsclient.ClientHandshakeProcessor(mysocket, host, port)
@@ -203,7 +208,7 @@ while True:
                     print "warning: values clamped, %d bin(s) above value 4095, %d bin(s) below value 0"%(rss_wf_too_high, rss_wf_too_low)
                 rss_wf_output=np.flip(rss_wf_output)
                 #print "rss_wf_output size:", rss_wf_output.size, integrate_items.size
-                rss_queue.put(struct.pack(">%dH"%rss_wf_output.size, *rss_wf_output)+"\xfe\xfe")
+                if rss_accepted[0]: rss_queue.put(struct.pack(">%dH"%rss_wf_output.size, *rss_wf_output)+"\xfe\xfe")
                 qsize =  rss_queue.qsize()
                 if qsize>10: print "warning: rss transmit queue size =", qsize,"> 10"
     else: # this is chatter between client and server
