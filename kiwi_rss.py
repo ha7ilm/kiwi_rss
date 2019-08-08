@@ -47,6 +47,7 @@ parser.add_option("-w", "--plot-waterfall", action="store_true", help="whether t
 parser.add_option("-i", "--integrate", type=int, help="calculate the mean of every given number of FFT outputs", dest="integrate", default=1)
 parser.add_option("--waterfall-lower", action="store_true", 
         help="whether to use the lower part of the waterfall", dest="waterfall-lower", default=False)
+parser.add_option("-2", "--compression-2", action="store_true", help="whether to use the new compression mode added to KiwiSDR server", dest="compression-2", default=False)
 
 options = vars(parser.parse_args()[0])
 
@@ -66,7 +67,6 @@ full_span = 30000.0 # for a 30MHz kiwiSDR
 rbw = full_span/bins
 center_freq = full_span/2
 print "Center frequency: %.3f MHz" % (center_freq/1000)
-
 
 def rss_worker():
     rss_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -123,11 +123,13 @@ stream_option.unmask_receive = False
 mystream = Stream(request, stream_option)
 print "Data stream active..."
 
+comp_2 = options['compression-2']
+if comp_2: print "Using compression-2"
 
 # send a sequence of messages to the server, hardcoded for now
 # max wf speed, no compression
 msg_list = ['SET auth t=kiwi p=', 'SET zoom=%d start=%d'%(0,0),\
-'SET maxdb=0 mindb=-100', 'SET wf_speed=%d'%(options["speed"]), 'SET wf_comp=0']
+'SET maxdb=0 mindb=-100', 'SET wf_speed=%d'%(options["speed"]), 'SET wf_comp=%d'%(2 if comp_2 else 0)]
 for msg in msg_list:
     mystream.send_message(msg)
 print "Starting to retrieve waterfall data..."
@@ -169,14 +171,26 @@ while True:
         last_keepalive = time.time()
     # receive one msg from server
     tmp = mystream.receive_message()
+    print "tmp length:", len(tmp)
     if tmp and "W/F" in tmp: # this is one waterfall line
-        tmp = tmp[16:] # remove some header from each msg
         #spectrum = np.array(struct.unpack('%dB'%len(tmp), tmp) ) # convert from binary data to uint8
-        spectrum = np.ndarray(len(tmp), dtype='B', buffer=tmp) # convert from binary data to uint8
-        #wf_data[time, :] = spectrum-255 # mirror dBs
-        wf_data[:] = spectrum
-        wf_data[:] = -(255 - wf_data[:])  # dBm
-        wf_data[:] = wf_data[:] - 13  # typical Kiwi wf cal
+        if comp_2:
+            tmp = tmp[4:] # remove some header from each msg
+            tddata = np.ndarray(len(tmp)/8, dtype='c8', buffer=tmp)
+            print "tddata length:", len(tddata)
+            #np.set_printoptions(threshold=sys.maxsize)
+            #print tddata
+            tddata = tddata[0:bins*2]
+            spectrum=np.fft.fft(np.multiply(tddata, np.hamming(len(tddata))))
+            wf_data=20*np.log10(abs(spectrum[:1024]))-60
+            print "wf_data length:", len(wf_data)
+        else:
+            tmp = tmp[16:] # remove some header from each msg
+            spectrum = np.ndarray(len(tmp), dtype='B', buffer=tmp) # convert from binary data to uint8
+            #wf_data[time, :] = spectrum-255 # mirror dBs
+            wf_data[:] = spectrum
+            wf_data[:] = -(255 - wf_data[:])  # dBm
+            wf_data[:] = wf_data[:] - 13  # typical Kiwi wf cal
         if plt:
             plt.clf()
             #plt.semilogy(np.linspace(0, 30e6, len(wf_data)), wf_data)
