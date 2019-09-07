@@ -199,16 +199,27 @@ while True:
             plt.pause(0.01)
         if rss_enable: 
             if rss_thread_finished[0]: break
-            rss_wf_data=wf_data[512:] if not options["waterfall-lower"] else wf_data[:511]
+            if comp_2: 
+                rss_wf_data=spectrum[512:1024] if not options["waterfall-lower"] else spectrum[:511]
+                rss_wf_data=np.power(rss_wf_data,2) #spectrum^2 will be integrated
+            else: rss_wf_data=wf_data[512:] if not options["waterfall-lower"] else wf_data[:511]
             integrate_items[:,integrate_iter] = rss_wf_data
             integrate_iter += 1
             if options["integrate"]<=integrate_iter:
                 integrate_iter = 0
                 rss_wf_output = np.mean(integrate_items, axis=1)
-                if log_enable.get()>0:
-                    rss_wf_output=(rss_wf_output+rss_offset.get())*(4096/60.)*rss_gain.get()
+                if comp_2:
+                    if log_enable.get()>0: #log mode
+                        rss_wf_output=(10*np.log10(rss_wf_output)+rss_offset.get())*(4096/60.)*rss_gain.get()
+                        print "log mode", rss_wf_output
+                    else: #linear
+                        rss_wf_output=rss_gain.get()*4096*rss_wf_output+rss_offset.get()
+                        print "lin mode", rss_wf_output
                 else:
-                    rss_wf_output=rss_gain.get()*4096*(10**((rss_wf_output+rss_offset.get())/20))
+                    if log_enable.get()>0:
+                        rss_wf_output=(rss_wf_output+rss_offset.get())*(4096/60.)*rss_gain.get()
+                    else:
+                        rss_wf_output=rss_gain.get()*4096*(10**((rss_wf_output+rss_offset.get())/20))
                 rss_wf_too_high = 0
                 rss_wf_too_low = 0
                 for key in range(len(rss_wf_output)):
