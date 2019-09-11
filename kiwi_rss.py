@@ -48,6 +48,7 @@ parser.add_option("-i", "--integrate", type=int, help="calculate the mean of eve
 parser.add_option("--waterfall-lower", action="store_true", 
         help="whether to use the lower part of the waterfall", dest="waterfall-lower", default=False)
 parser.add_option("-2", "--compression-2", action="store_true", help="whether to use the new compression mode added to KiwiSDR server", dest="compression-2", default=False)
+parser.add_option("-m", "--min-hold", action="store_true", help="whether to use min. hold while integrating", dest="min-hold", default=False)
 
 options = vars(parser.parse_args()[0])
 
@@ -153,7 +154,7 @@ rss_gain=DoubleVar(value=options["rss_gain"])
 Scale(tk_root, from_=0., to=3., variable=rss_gain, label="Gain", resolution=0.1).pack(anchor=CENTER)
 
 log_enable = IntVar(value=not options["linear"])
-Radiobutton(tk_root, text="Logarithmic scale", variable=log_enable, value=1).pack(anchor=W)
+Radiobutton(tk_root, text="Pow-2" if comp_2 else "Logarithmic scale", variable=log_enable, value=1).pack(anchor=W)
 Radiobutton(tk_root, text="Linear scale", variable=log_enable, value=0).pack(anchor=W)
 Label(text="Y = Gain * (X + Offset)").pack(anchor=W)
 
@@ -201,20 +202,21 @@ while True:
             if rss_thread_finished[0]: break
             if comp_2: 
                 rss_wf_data=spectrum[512:1024] if not options["waterfall-lower"] else spectrum[:511]
-                rss_wf_data=np.power(rss_wf_data,2) #spectrum^2 will be integrated
+                rss_wf_data=np.abs(rss_wf_data) if not log_enable.get()>0 else np.power(np.abs(rss_wf_data),2)
             else: rss_wf_data=wf_data[512:] if not options["waterfall-lower"] else wf_data[:511]
             integrate_items[:,integrate_iter] = rss_wf_data
             integrate_iter += 1
             if options["integrate"]<=integrate_iter:
                 integrate_iter = 0
-                rss_wf_output = np.mean(integrate_items, axis=1)
+                rss_wf_output = np.mean(integrate_items, axis=1) if not options['min-hold'] else np.min(integrate_items, axis=1)
                 if comp_2:
                     if log_enable.get()>0: #log mode
-                        rss_wf_output=(10*np.log10(rss_wf_output)+rss_offset.get())*(4096/60.)*rss_gain.get()
-                        print "log mode", rss_wf_output
+                        #rss_wf_output=(10*np.log10(rss_wf_output)+rss_offset.get())*(4096/60.)*rss_gain.get()
+                        rss_wf_output=rss_gain.get()*1e8*rss_wf_output+rss_offset.get()
+                        #print rss_wf_output, "log mode"
                     else: #linear
-                        rss_wf_output=rss_gain.get()*4096*rss_wf_output+rss_offset.get()
-                        print "lin mode", rss_wf_output
+                        rss_wf_output=rss_gain.get()*1e6*rss_wf_output+20*rss_offset.get()
+                        #print rss_wf_output, "lin mode"
                 else:
                     if log_enable.get()>0:
                         rss_wf_output=(rss_wf_output+rss_offset.get())*(4096/60.)*rss_gain.get()
