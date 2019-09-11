@@ -2,9 +2,9 @@
 
 """
 This code is based on "microkiwi_waterfall.py".
-Code parts added by András Retzler can be used under the MIT license, as follows:
+Code parts added by Andras Retzler can be used under the MIT license, as follows:
 
-Copyright 2019 András Retzler <randras@sdr.hu>
+Copyright 2019 Andras Retzler <randras@sdr.hu>
 Permission is hereby granted, free of charge, to any person obtaining a copy of this
 software and associated documentation files (the "Software"), to deal in the Software
 without restriction, including without limitation the rights to use, copy, modify,
